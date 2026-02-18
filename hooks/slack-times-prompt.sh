@@ -34,15 +34,24 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# ── 4. プロジェクト情報（Git: repo/branch、非Git: 絶対パス）──
+# ── 4. プロジェクト情報（Git: org:repo/branch、非Git: ~/path）──
 PROJECT_INFO=""
 if [ -n "$CWD" ] && [ -d "$CWD" ]; then
   if git -C "$CWD" rev-parse --is-inside-work-tree &>/dev/null; then
     REPO_NAME=$(basename "$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)")
     BRANCH_NAME=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    PROJECT_INFO="${REPO_NAME}/${BRANCH_NAME}"
+    REMOTE_URL=$(git -C "$CWD" remote get-url origin 2>/dev/null || true)
+    ORG=""
+    if [ -n "$REMOTE_URL" ]; then
+      ORG=$(echo "$REMOTE_URL" | sed -E 's#.*[:/]([^/]+)/[^/]+$#\1#; s#\.git$##')
+    fi
+    if [ -n "$ORG" ]; then
+      PROJECT_INFO="${ORG}:${REPO_NAME}/${BRANCH_NAME}"
+    else
+      PROJECT_INFO="${REPO_NAME}/${BRANCH_NAME}"
+    fi
   else
-    PROJECT_INFO="$CWD"
+    PROJECT_INFO=$(echo "$CWD" | sed "s|^$HOME|~|")
   fi
 else
   PROJECT_INFO="${CWD:-unknown}"

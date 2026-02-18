@@ -1,8 +1,9 @@
 {
   "name": "cc-slackhook",
-  "description": "Claude Code セッションの開始・終了を Slack に通知",
+  "description": "Claude Code セッションの開始・終了を Slack に通知。プロンプト、作業サマリー、変更ファイル、Git操作を自動的にSlackスレッドにまとめて投稿。",
   "version": "1.0.0",
   "author": {
-    "name": "rh"
-  }
+    "name": "fadysan-rh"
+  },
+  "homepage": "https://github.com/fadysan-rh/cc-slackhook-plugin"
 }
