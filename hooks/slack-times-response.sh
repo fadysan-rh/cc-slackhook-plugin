@@ -128,7 +128,13 @@ if [ -n "$CHANGED_FILES" ] && [ -n "$CWD" ]; then
     REPO_ROOT=$(git -C "$(dirname "$filepath")" rev-parse --show-toplevel 2>/dev/null || true)
     DIFF_STAT=""
     if [ -n "$REPO_ROOT" ]; then
+      # 1. 未ステージの変更
       DIFF_STAT=$(git -C "$REPO_ROOT" diff --numstat -- "$filepath" 2>/dev/null | head -1 || true)
+      # 2. ステージ済み（git add後、未コミット）
+      if [ -z "$DIFF_STAT" ]; then
+        DIFF_STAT=$(git -C "$REPO_ROOT" diff --cached --numstat -- "$filepath" 2>/dev/null | head -1 || true)
+      fi
+      # 3. 直近のコミットに含まれる変更
       if [ -z "$DIFF_STAT" ]; then
         DIFF_STAT=$(git -C "$REPO_ROOT" diff --numstat HEAD~1 HEAD -- "$filepath" 2>/dev/null | head -1 || true)
       fi
