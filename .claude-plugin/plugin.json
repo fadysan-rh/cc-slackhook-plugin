@@ -1,0 +1,8 @@
+{
+  "name": "cc-slackhook",
+  "description": "Claude Code セッションの開始・終了を Slack に通知",
+  "version": "1.0.0",
+  "author": {
+    "name": "rh"
+  }
+}
