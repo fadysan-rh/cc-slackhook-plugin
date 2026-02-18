@@ -63,10 +63,10 @@ fi
 # ── 7. メッセージ構築 ──
 if [ -n "$THREAD_TS" ]; then
   # 2回目以降: スレッドに返信
-  TEXT=":speech_balloon: *リクエスト:*\n${PROMPT_TRUNCATED}"
+  TEXT=$(printf ":speech_balloon: *リクエスト:*\n%s" "$PROMPT_TRUNCATED")
 else
   # 初回: 作業開始メッセージ
-  TEXT=":robot_face: *【Claude Code作業開始】*\n:file_folder: \`${PROJECT_INFO}\`\n\n${PROMPT_TRUNCATED}"
+  TEXT=$(printf ":robot_face: *【Claude Code作業開始】*\n:file_folder: \`%s\`\n\n%s" "$PROJECT_INFO" "$PROMPT_TRUNCATED")
 fi
 
 # ── 8. Slack API に直接 POST ──
