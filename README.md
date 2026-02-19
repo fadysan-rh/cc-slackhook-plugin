@@ -4,26 +4,28 @@
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)](https://docs.anthropic.com/en/docs/claude-code)
 [![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](hooks/)
 
-> Claude Code の作業状況を Slack にリアルタイム通知するプラグイン。
-> プロンプト送信・質問への回答・作業完了サマリーをスレッドにまとめて可視化します。
+> Real-time Slack notifications for Claude Code session activity.
+> Prompt submissions, AskUserQuestion answers, and stop summaries are grouped into one thread.
+
+Language: English | [Japanese](docs/ja/README.md)
 
 ---
 
 ## Overview
 
-チームで Claude Code を使っていると「今なにやってるの？」が見えにくい。
-**cc-slackhook** はその問題を解決します。
+When teams use Claude Code, it can be hard to see what is currently in progress.
+**cc-slackhook** makes that visible in Slack.
 
 ```
-You: "認証機能を実装して"
+You: "Implement authentication"
   ↓
-Slack: プロンプト
+Slack: Prompt
        repo/dir: org:repo/main
-       認証機能を実装して
-         ├── リクエスト: "JWT と Session どちらがいい？"
-         ├── 回答: "JWT で"
-         └── 作業完了
-              変更ファイル:
+       Implement authentication
+         ├── Request: "JWT or session?"
+         ├── Answer: "JWT"
+         └── Work complete
+              Changed Files:
               • M src/auth/jwt.ts (+48 -0)
               • M src/middleware.ts (+12 -3)
               Git:
@@ -34,15 +36,15 @@ Slack: プロンプト
 
 | Hook | Trigger | What it does |
 |------|---------|-------------|
-| **Prompt** | `UserPromptSubmit` | プロンプト送信時にSlack投稿。初回は新スレッド、以降はスレッド返信 |
-| **Answer** | `PostToolUse` | `AskUserQuestion` への回答をスレッドに返信 |
-| **Summary** | `Stop` | 作業サマリー・変更ファイル(diff統計付き)・Git操作をスレッドに返信 |
+| **Prompt** | `UserPromptSubmit` | Posts to Slack on user prompt submission. First post starts a new thread; later prompts continue in the thread. |
+| **Answer** | `PostToolUse` | Posts `AskUserQuestion` answers as thread replies. |
+| **Summary** | `Stop` | Posts work summary, changed files (with diff stats), and Git operation results. |
 
 ### Smart Threading
 
-- 同一セッションの通知は **1つのSlackスレッド** にまとまる
-- **30分間アイドル** または **作業ディレクトリ変更** で新スレッドを自動作成
-- タイムアウトは `SLACK_THREAD_TIMEOUT` で調整可能
+- One Slack thread per active session
+- Starts a new thread after 30 minutes of idle time or when the working directory changes
+- Timeout is configurable via `SLACK_THREAD_TIMEOUT`
 
 ## Install
 
@@ -52,62 +54,62 @@ claude plugin add /path/to/cc-slackhook-plugin
 
 ## Configuration
 
-`~/.claude/settings.json` に環境変数を追加:
+Add these environment variables to `~/.claude/settings.json`:
 
 ```jsonc
 {
   "env": {
-    "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer通知 (ユーザーとして投稿)
-    "SLACK_BOT_TOKEN": "xoxb-...",    // Summary通知 (Botとして投稿)
-    "SLACK_CHANNEL": "C0XXXXXXX",     // 通知先チャンネルID
-    "SLACK_LOCALE": "ja"              // 通知文言の言語: ja / en（未設定時はja）
+    "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer posts (as user)
+    "SLACK_BOT_TOKEN": "xoxb-...",    // Summary posts (as bot)
+    "SLACK_CHANNEL": "C0XXXXXXX",     // Target channel ID
+    "SLACK_LOCALE": "ja"              // Message locale: ja / en (default: ja)
   }
 }
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `SLACK_USER_TOKEN` | Yes | プロンプト・回答通知用 (ユーザーとして投稿) |
-| `SLACK_BOT_TOKEN` | Yes | 作業サマリー通知用 (Botとして投稿) |
-| `SLACK_CHANNEL` | Yes | 通知先SlackチャンネルID |
-| `SLACK_THREAD_TIMEOUT` | No | 新スレッドまでの秒数 (default: `1800` = 30min) |
-| `SLACK_LOCALE` | No | 通知文言の言語。`ja` or `en` (default: `ja`) |
+| `SLACK_USER_TOKEN` | Yes | Token for prompt/answer notifications (posted as the user) |
+| `SLACK_BOT_TOKEN` | Yes | Token for stop summary notifications (posted as the bot) |
+| `SLACK_CHANNEL` | Yes | Target Slack channel ID |
+| `SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
+| `SLACK_LOCALE` | No | Notification locale: `ja` or `en` (default: `ja`) |
 
 ## Slack App Setup
 
-1. [Slack API](https://api.slack.com/apps) で新しいAppを作成
-2. **OAuth & Permissions** で以下のスコープを追加:
+1. Create a new app in [Slack API](https://api.slack.com/apps).
+2. In **OAuth & Permissions**, add these scopes.
 
    | Token | Scope |
    |-------|-------|
    | Bot Token | `chat:write` |
    | User Token | `chat:write` |
 
-3. Appをワークスペースにインストールしてトークンをコピー
-4. 通知先チャンネルにAppを招待 (`/invite @your-app`)
+3. Install the app in your workspace and copy the tokens.
+4. Invite the app to the target channel (`/invite @your-app`).
 
 ## Architecture
 
 ```
 hooks/
-├── hooks.json                 # Hook定義 (イベント → スクリプトのマッピング)
-├── slack-times-prompt.sh      # UserPromptSubmit → Slack投稿
-├── slack-times-answer.sh      # PostToolUse(AskUserQuestion) → スレッド返信
-└── slack-times-response.sh    # Stop → 作業サマリーをスレッド返信
+├── hooks.json                 # Hook definitions (event -> script)
+├── slack-times-prompt.sh      # UserPromptSubmit -> Slack post
+├── slack-times-answer.sh      # PostToolUse(AskUserQuestion) -> thread reply
+└── slack-times-response.sh    # Stop -> thread summary
 ```
 
-**投稿の使い分け:**
-- Prompt / Answer → `SLACK_USER_TOKEN` でユーザーとして投稿 (自分のアイコンで表示)
-- Summary → `SLACK_BOT_TOKEN` で Bot として投稿 (Claude アイコンで表示)
+Posting behavior:
+- Prompt / Answer: posted with `SLACK_USER_TOKEN` as the user
+- Summary: posted with `SLACK_BOT_TOKEN` as the bot
 
 ## Development
 
 ```bash
-# Hook のリグレッションテストを実行
+# Run hook regression tests
 tests/run-hooks-tests.sh
 ```
 
-デバッグログは `/tmp/slack-times-debug.log` に出力されます。
+Debug logs are written to `/tmp/slack-times-debug.log`.
 
 ## License
 
