@@ -72,7 +72,9 @@ claude --plugin-dir /path/to/cc-slackhook-plugin
     "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer 通知（ユーザーとして投稿）
     "SLACK_BOT_TOKEN": "xoxb-...",    // Summary 通知（Botとして投稿）
     "SLACK_CHANNEL": "C0XXXXXXX",     // 通知先チャンネルID
-    "SLACK_LOCALE": "ja"              // 通知文言の言語: ja / en（既定: ja）
+    "SLACK_LOCALE": "ja",             // 通知文言の言語: ja / en（既定: ja）
+    "SLACK_HOOK_DEBUG": "0",          // 任意: 1 でデバッグログ有効化
+    "SLACK_HOOK_DEBUG_LOG": ""        // 任意: デバッグログ保存先
   }
 }
 ```
@@ -84,6 +86,8 @@ claude --plugin-dir /path/to/cc-slackhook-plugin
 | `SLACK_CHANNEL` | Yes | 通知先 Slack チャンネル ID |
 | `SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
 | `SLACK_LOCALE` | No | 通知文言の言語。`ja` または `en`（既定: `ja`） |
+| `SLACK_HOOK_DEBUG` | No | `1` で Hook のデバッグログを有効化（既定: 無効） |
+| `SLACK_HOOK_DEBUG_LOG` | No | デバッグログの出力先（既定: `$HOME/.claude/slack-times-debug.log`） |
 
 ## Slack App Setup
 
@@ -119,7 +123,9 @@ hooks/
 tests/run-hooks-tests.sh
 ```
 
-デバッグログは `/tmp/slack-times-debug.log` に出力されます。
+デバッグログは既定で無効です。  
+`SLACK_HOOK_DEBUG=1` で有効化できます。  
+既定の出力先は `$HOME/.claude/slack-times-debug.log`（権限 `600`）です。
 
 ## Release
 

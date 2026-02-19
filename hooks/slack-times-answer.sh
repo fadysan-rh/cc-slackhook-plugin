@@ -2,8 +2,38 @@
 set -uo pipefail
 
 # ── デバッグログ ──
-DEBUG_LOG="/tmp/slack-times-debug.log"
-debug() { echo "[$(date '+%H:%M:%S')] [answer] $*" >> "$DEBUG_LOG"; }
+DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
+DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
+
+init_debug_log() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  local log_dir
+  log_dir=$(dirname "$DEBUG_LOG")
+  (umask 077 && mkdir -p "$log_dir" && touch "$DEBUG_LOG") 2>/dev/null || return 0
+  chmod 600 "$DEBUG_LOG" 2>/dev/null || true
+}
+
+debug() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  echo "[$(date '+%H:%M:%S')] [answer] $*" >> "$DEBUG_LOG"
+}
+
+is_valid_session_id() {
+  local sid="$1"
+  [ -n "$sid" ] || return 1
+  [ "${#sid}" -le 128 ] || return 1
+  [[ "$sid" =~ ^[A-Za-z0-9._-]+$ ]]
+}
+
+escape_mrkdwn() {
+  printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+init_debug_log
 debug "=== Answer hook started ==="
 
 # ── i18n ──
@@ -31,8 +61,13 @@ fi
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 TOOL_RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // ""')
 
+if ! is_valid_session_id "$SESSION_ID"; then
+  debug "EXIT: invalid session_id"
+  exit 0
+fi
+
 debug "SESSION_ID=$SESSION_ID"
-debug "TOOL_RESPONSE=${TOOL_RESPONSE:0:200}"
+debug "TOOL_RESPONSE_LEN=${#TOOL_RESPONSE}"
 
 # ── 4. スレッド ts の読み取り ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
@@ -73,11 +108,12 @@ if [ -z "$ANSWER" ] || [ "$ANSWER" = "null" ]; then
 fi
 
 ANSWER_TRUNCATED="${ANSWER:0:500}"
-debug "ANSWER=$ANSWER_TRUNCATED"
+ANSWER_ESCAPED=$(escape_mrkdwn "$ANSWER_TRUNCATED")
+debug "ANSWER_LEN=${#ANSWER_TRUNCATED}"
 
 # ── 6. Slack にスレッド返信 ──
 ANSWER_LABEL=$(i18n_text "$LOCALE" "answer_label")
-TEXT=$(printf "*%s:*\n%s" "$ANSWER_LABEL" "$ANSWER_TRUNCATED")
+TEXT=$(printf "*%s:*\n%s" "$ANSWER_LABEL" "$ANSWER_ESCAPED")
 
 BLOCKS=$(jq -n --arg text "$TEXT" '[{"type":"section","text":{"type":"mrkdwn","text":$text}}]')
 
@@ -100,6 +136,7 @@ debug "RESPONSE: ${RESPONSE:0:200}"
 
 # スレッドの最終利用時刻を更新
 touch "$THREAD_FILE"
+chmod 600 "$THREAD_FILE" 2>/dev/null || true
 
 debug "=== Answer hook finished ==="
 

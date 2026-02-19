@@ -76,6 +76,16 @@ assert_nonzero() {
   fi
 }
 
+assert_file_absent() {
+  local name="$1"
+  local path="$2"
+  if [ -e "$path" ]; then
+    fail "${name}" "unexpected file: ${path}"
+  else
+    pass "${name}"
+  fi
+}
+
 debug_line_count() {
   if [ -f "$DEBUG_LOG" ]; then
     wc -l < "$DEBUG_LOG"
@@ -91,6 +101,19 @@ debug_slice() {
   else
     echo ""
   fi
+}
+
+file_mode() {
+  local path="$1"
+  if stat -f %Lp "$path" >/dev/null 2>&1; then
+    stat -f %Lp "$path"
+    return 0
+  fi
+  if stat -c %a "$path" >/dev/null 2>&1; then
+    stat -c %a "$path"
+    return 0
+  fi
+  echo "unknown"
 }
 
 write_mock_curl() {
@@ -169,6 +192,8 @@ run_stop_hook() {
   MOCK_CURL_MODE="$curl_mode" \
   SLACK_BOT_TOKEN="xoxb-test" \
   SLACK_CHANNEL="C_TEST" \
+  SLACK_HOOK_DEBUG="1" \
+  SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
     bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
 
   echo "$status"
@@ -299,6 +324,8 @@ run_stop_hook_capture() {
     SLACK_BOT_TOKEN="xoxb-test" \
     SLACK_CHANNEL="C_TEST" \
     SLACK_LOCALE="$locale" \
+    SLACK_HOOK_DEBUG="1" \
+    SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
       bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
   else
     HOME="$test_home" \
@@ -307,6 +334,8 @@ run_stop_hook_capture() {
     MOCK_CURL_CAPTURE="$capture_file" \
     SLACK_BOT_TOKEN="xoxb-test" \
     SLACK_CHANNEL="C_TEST" \
+    SLACK_HOOK_DEBUG="1" \
+    SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
       bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
   fi
 
@@ -411,6 +440,126 @@ test_prompt_thread_reply_no_emoji() {
   rm -rf "$tmp_dir"
 }
 
+test_prompt_invalid_session_id() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/prompt-body.json"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "../evil" \
+    --arg prompt "hello" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, prompt:$prompt, cwd:$cwd}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  SLACK_USER_TOKEN="xoxp-test" \
+  SLACK_CHANNEL="C_TEST" \
+    bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  assert_zero "prompt_invalid_session_id_exit" "$status"
+  assert_file_absent "prompt_invalid_session_id_no_post" "$capture_file"
+  assert_file_absent "prompt_invalid_session_id_no_escape_file" "${test_home}/evil"
+  assert_file_absent "prompt_invalid_session_id_no_escape_file_cwd" "${test_home}/evil.cwd"
+
+  rm -rf "$tmp_dir"
+}
+
+test_prompt_escape_mrkdwn_mentions() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local result
+  result=$(run_prompt_hook "$repo_dir" "test-prompt-escape" "<!channel> & <tag>" "en")
+  local status
+  status=$(echo "$result" | jq -r '.status')
+  local text
+  text=$(echo "$result" | jq -r '.text')
+
+  assert_zero "prompt_escape_mrkdwn_exit" "$status"
+  assert_contains "prompt_escape_mrkdwn_escaped" "$text" "&lt;!channel&gt; &amp; &lt;tag&gt;"
+  assert_not_contains "prompt_escape_mrkdwn_no_raw_mention" "$text" "<!channel>"
+
+  rm -rf "$tmp_dir"
+}
+
+test_prompt_debug_disabled_by_default() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local result
+  result=$(run_prompt_hook "$repo_dir" "test-prompt-debug-default" "hello" "en")
+  local status
+  status=$(echo "$result" | jq -r '.status')
+
+  assert_zero "prompt_debug_default_exit" "$status"
+  assert_file_absent "prompt_debug_default_no_log_file" "${repo_dir}/.home/.claude/slack-times-debug.log"
+
+  rm -rf "$tmp_dir"
+}
+
+test_prompt_debug_log_permission_when_enabled() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local debug_log="${repo_dir}/hook-debug.log"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "test-prompt-debug-perm" \
+    --arg prompt "hello" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, prompt:$prompt, cwd:$cwd}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  SLACK_USER_TOKEN="xoxp-test" \
+  SLACK_CHANNEL="C_TEST" \
+  SLACK_HOOK_DEBUG="1" \
+  SLACK_HOOK_DEBUG_LOG="$debug_log" \
+    bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  assert_zero "prompt_debug_enabled_exit" "$status"
+  if [ -f "$debug_log" ]; then
+    pass "prompt_debug_enabled_log_file_created"
+  else
+    fail "prompt_debug_enabled_log_file_created" "missing: ${debug_log}"
+  fi
+
+  local mode
+  mode=$(file_mode "$debug_log")
+  if [ "$mode" = "600" ]; then
+    pass "prompt_debug_enabled_log_mode_600"
+  else
+    fail "prompt_debug_enabled_log_mode_600" "expected 600, got ${mode}"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
 test_answer_locale_en() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -491,6 +640,26 @@ test_answer_locale_unset_fallback() {
   rm -rf "$tmp_dir"
 }
 
+test_answer_escape_mrkdwn_mentions() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local result
+  result=$(run_answer_hook "$repo_dir" "test-answer-escape" "<!here> & <x>" "en")
+  local status
+  status=$(echo "$result" | jq -r '.status')
+  local text
+  text=$(echo "$result" | jq -r '.text')
+
+  assert_zero "answer_escape_mrkdwn_exit" "$status"
+  assert_contains "answer_escape_mrkdwn_escaped" "$text" "&lt;!here&gt; &amp; &lt;x&gt;"
+  assert_not_contains "answer_escape_mrkdwn_no_raw_mention" "$text" "<!here>"
+
+  rm -rf "$tmp_dir"
+}
+
 test_stop_normal() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -513,8 +682,8 @@ test_stop_normal() {
   logs=$(debug_slice "$log_start")
 
   assert_zero "stop_normal_exit" "$status"
-  assert_contains "stop_normal_summary" "$logs" "WORK_SUMMARY=normal summary"
-  assert_contains "stop_normal_changed_file" "$logs" "CHANGED_FILES=M notes.txt (+1 -1)"
+  assert_contains "stop_normal_summary" "$logs" "WORK_SUMMARY_LEN=14"
+  assert_contains "stop_normal_changed_file" "$logs" "CHANGED_FILE_COUNT=1"
   assert_contains "stop_normal_posted" "$logs" "RESPONSE: {\"ok\":true"
 
   rm -rf "$tmp_dir"
@@ -542,7 +711,7 @@ test_stop_dr_only() {
   logs=$(debug_slice "$log_start")
 
   assert_zero "stop_dr_only_exit" "$status"
-  assert_contains "stop_dr_only_changed_file" "$logs" "CHANGED_FILES=D old.txt"
+  assert_contains "stop_dr_only_changed_file" "$logs" "CHANGED_FILE_COUNT=1"
 
   rm -rf "$tmp_dir"
 }
@@ -572,7 +741,7 @@ test_stop_long_turn_window() {
 
   assert_zero "stop_long_turn_exit" "$status"
   assert_contains "stop_long_turn_window" "$logs" "Turn window matched within tail -400"
-  assert_contains "stop_long_turn_summary" "$logs" "WORK_SUMMARY=long window summary"
+  assert_contains "stop_long_turn_summary" "$logs" "WORK_SUMMARY_LEN=19"
 
   rm -rf "$tmp_dir"
 }
@@ -596,6 +765,25 @@ test_stop_invalid_auth() {
   assert_nonzero "stop_invalid_auth_exit" "$status"
   assert_contains "stop_invalid_auth_error" "$logs" "ERROR: Slack API failed error=invalid_auth"
   assert_contains "stop_invalid_auth_exit_log" "$logs" "EXIT: failed to post stop summary"
+
+  rm -rf "$tmp_dir"
+}
+
+test_stop_reject_unsafe_transcript_path() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local log_start
+  log_start=$(debug_line_count)
+  local status
+  status=$(run_stop_hook "$repo_dir" "/etc/passwd" "test-unsafe-transcript-path" "ok")
+  local logs
+  logs=$(debug_slice "$log_start")
+
+  assert_zero "stop_unsafe_transcript_exit" "$status"
+  assert_contains "stop_unsafe_transcript_rejected" "$logs" "EXIT: unsafe transcript_path"
 
   rm -rf "$tmp_dir"
 }
@@ -723,10 +911,15 @@ main() {
   test_prompt_locale_invalid_fallback
   test_prompt_locale_unset_fallback
   test_prompt_thread_reply_no_emoji
+  test_prompt_invalid_session_id
+  test_prompt_escape_mrkdwn_mentions
+  test_prompt_debug_disabled_by_default
+  test_prompt_debug_log_permission_when_enabled
   test_answer_locale_en
   test_answer_locale_ja
   test_answer_locale_invalid_fallback
   test_answer_locale_unset_fallback
+  test_answer_escape_mrkdwn_mentions
   test_stop_locale_en
   test_stop_locale_ja
   test_stop_locale_invalid_fallback
@@ -736,6 +929,7 @@ main() {
   test_stop_dr_only
   test_stop_long_turn_window
   test_stop_invalid_auth
+  test_stop_reject_unsafe_transcript_path
 
   echo "----"
   echo "Passed: ${PASS_COUNT}"

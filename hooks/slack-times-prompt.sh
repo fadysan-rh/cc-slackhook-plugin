@@ -2,8 +2,38 @@
 set -uo pipefail
 
 # ── デバッグログ ──
-DEBUG_LOG="/tmp/slack-times-debug.log"
-debug() { echo "[$(date '+%H:%M:%S')] [start] $*" >> "$DEBUG_LOG"; }
+DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
+DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
+
+init_debug_log() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  local log_dir
+  log_dir=$(dirname "$DEBUG_LOG")
+  (umask 077 && mkdir -p "$log_dir" && touch "$DEBUG_LOG") 2>/dev/null || return 0
+  chmod 600 "$DEBUG_LOG" 2>/dev/null || true
+}
+
+debug() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  echo "[$(date '+%H:%M:%S')] [start] $*" >> "$DEBUG_LOG"
+}
+
+is_valid_session_id() {
+  local sid="$1"
+  [ -n "$sid" ] || return 1
+  [ "${#sid}" -le 128 ] || return 1
+  [[ "$sid" =~ ^[A-Za-z0-9._-]+$ ]]
+}
+
+escape_mrkdwn() {
+  printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+init_debug_log
 debug "=== Start hook started ==="
 
 # ── i18n ──
@@ -46,8 +76,13 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // ""')
 CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
 
+if ! is_valid_session_id "$SESSION_ID"; then
+  debug "EXIT: invalid session_id"
+  exit 0
+fi
+
 debug "SESSION_ID=$SESSION_ID"
-debug "PROMPT=${PROMPT:0:100}"
+debug "PROMPT_LEN=${#PROMPT}"
 debug "CWD=$CWD"
 
 if [ -z "$PROMPT" ]; then
@@ -82,6 +117,8 @@ debug "PROJECT_INFO=$PROJECT_INFO"
 
 # ── 5. プロンプトを切り詰め ──
 PROMPT_TRUNCATED="${PROMPT:0:500}"
+PROMPT_ESCAPED=$(escape_mrkdwn "$PROMPT_TRUNCATED")
+PROJECT_INFO_ESCAPED=$(escape_mrkdwn "$PROJECT_INFO")
 
 # ── 6. スレッド管理 ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
@@ -123,6 +160,7 @@ fi
 
 # CWDを記録
 echo -n "$CWD" > "$THREAD_CWD_FILE"
+chmod 600 "$THREAD_CWD_FILE" 2>/dev/null || true
 
 # ── 7. メッセージ構築 ──
 REQUEST_LABEL=$(i18n_text "$LOCALE" "prompt_request_label")
@@ -132,10 +170,10 @@ REPO_DIR_LABEL=$(i18n_text "$LOCALE" "prompt_repo_dir_label")
 
 if [ -n "$THREAD_TS" ]; then
   # 2回目以降: スレッドに返信
-  TEXT=$(printf "*%s:*\n%s" "$REQUEST_LABEL" "$PROMPT_TRUNCATED")
+  TEXT=$(printf "*%s:*\n%s" "$REQUEST_LABEL" "$PROMPT_ESCAPED")
 else
   # 初回: 作業開始メッセージ
-  TEXT=$(printf "*%s*\n*%s:* %s\n\n*%s*\n%s" "$SESSION_STARTED_LABEL" "$REPO_DIR_LABEL" "$PROJECT_INFO" "$START_HEADER" "$PROMPT_TRUNCATED")
+  TEXT=$(printf "*%s*\n*%s:* %s\n\n*%s*\n%s" "$SESSION_STARTED_LABEL" "$REPO_DIR_LABEL" "$PROJECT_INFO_ESCAPED" "$START_HEADER" "$PROMPT_ESCAPED")
 fi
 
 # ── 8. Slack API に直接 POST ──
@@ -170,6 +208,7 @@ if [ -z "$THREAD_TS" ]; then
   NEW_TS=$(echo "$RESPONSE" | jq -r '.ts // ""' 2>/dev/null)
   if [ -n "$NEW_TS" ] && [ "$NEW_TS" != "null" ]; then
     echo -n "$NEW_TS" > "$THREAD_FILE"
+    chmod 600 "$THREAD_FILE" 2>/dev/null || true
     debug "Saved thread_ts=$NEW_TS to $THREAD_FILE"
   fi
 else

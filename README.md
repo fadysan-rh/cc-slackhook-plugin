@@ -74,7 +74,9 @@ Add these environment variables to `~/.claude/settings.json`:
     "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer posts (as user)
     "SLACK_BOT_TOKEN": "xoxb-...",    // Summary posts (as bot)
     "SLACK_CHANNEL": "C0XXXXXXX",     // Target channel ID
-    "SLACK_LOCALE": "ja"              // Message locale: ja / en (default: ja)
+    "SLACK_LOCALE": "ja",             // Message locale: ja / en (default: ja)
+    "SLACK_HOOK_DEBUG": "0",          // Optional: set 1 to enable debug logs
+    "SLACK_HOOK_DEBUG_LOG": ""        // Optional: custom debug log path
   }
 }
 ```
@@ -86,6 +88,8 @@ Add these environment variables to `~/.claude/settings.json`:
 | `SLACK_CHANNEL` | Yes | Target Slack channel ID |
 | `SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
 | `SLACK_LOCALE` | No | Notification locale: `ja` or `en` (default: `ja`) |
+| `SLACK_HOOK_DEBUG` | No | Set `1` to enable hook debug logs (default: disabled) |
+| `SLACK_HOOK_DEBUG_LOG` | No | Debug log path (default: `$HOME/.claude/slack-times-debug.log`) |
 
 ## Slack App Setup
 
@@ -121,7 +125,9 @@ Posting behavior:
 tests/run-hooks-tests.sh
 ```
 
-Debug logs are written to `/tmp/slack-times-debug.log`.
+Debug logs are disabled by default.  
+Set `SLACK_HOOK_DEBUG=1` to enable logging.  
+Default log path is `$HOME/.claude/slack-times-debug.log` (mode `600`).
 
 ## Release
 

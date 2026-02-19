@@ -2,8 +2,63 @@
 set -uo pipefail
 
 # ── デバッグログ ──
-DEBUG_LOG="/tmp/slack-times-debug.log"
-debug() { echo "[$(date '+%H:%M:%S')] [stop] $*" >> "$DEBUG_LOG"; }
+DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
+DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
+
+init_debug_log() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  local log_dir
+  log_dir=$(dirname "$DEBUG_LOG")
+  (umask 077 && mkdir -p "$log_dir" && touch "$DEBUG_LOG") 2>/dev/null || return 0
+  chmod 600 "$DEBUG_LOG" 2>/dev/null || true
+}
+
+debug() {
+  if [ "$DEBUG_ENABLED" != "1" ]; then
+    return 0
+  fi
+  echo "[$(date '+%H:%M:%S')] [stop] $*" >> "$DEBUG_LOG"
+}
+
+is_valid_session_id() {
+  local sid="$1"
+  [ -n "$sid" ] || return 1
+  [ "${#sid}" -le 128 ] || return 1
+  [[ "$sid" =~ ^[A-Za-z0-9._-]+$ ]]
+}
+
+escape_mrkdwn() {
+  printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+is_safe_transcript_path() {
+  local path="$1"
+  local cwd="$2"
+
+  [ -n "$path" ] || return 1
+  case "$path" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  case "$path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "$path" in
+    *.jsonl) ;;
+    *) return 1 ;;
+  esac
+  if [[ "$path" == "$HOME/.claude/"* ]]; then
+    return 0
+  fi
+  if [ -n "$cwd" ] && [[ "$path" == "$cwd/"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+init_debug_log
 debug "=== Stop hook started ==="
 
 # ── i18n ──
@@ -36,6 +91,16 @@ fi
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
 CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
+
+if ! is_valid_session_id "$SESSION_ID"; then
+  debug "EXIT: invalid session_id"
+  exit 0
+fi
+
+if [ -n "$TRANSCRIPT_PATH" ] && ! is_safe_transcript_path "$TRANSCRIPT_PATH" "$CWD"; then
+  debug "EXIT: unsafe transcript_path"
+  exit 0
+fi
 
 debug "SESSION_ID=$SESSION_ID"
 debug "TRANSCRIPT_PATH=$TRANSCRIPT_PATH"
@@ -274,9 +339,11 @@ if [ -n "$GIT_TOOL_IDS" ]; then
   done
 fi
 
-debug "WORK_SUMMARY=${WORK_SUMMARY:0:100}"
-debug "CHANGED_FILES=$CHANGED_FILES"
-debug "GIT_INFO=$GIT_INFO"
+CHANGED_FILE_COUNT=$(printf "%s\n" "$CHANGED_FILES" | awk 'NF {count++} END {print count+0}')
+GIT_INFO_LINES=$(printf "%s\n" "$GIT_INFO" | awk 'NF {count++} END {print count+0}')
+debug "WORK_SUMMARY_LEN=${#WORK_SUMMARY}"
+debug "CHANGED_FILE_COUNT=${CHANGED_FILE_COUNT}"
+debug "GIT_INFO_LINES=${GIT_INFO_LINES}"
 
 # ── 6. メッセージ組み立て ──
 WORK_SUMMARY_LABEL=$(i18n_text "$LOCALE" "stop_work_summary_label")
@@ -309,6 +376,7 @@ fi
 
 # 3000文字に切り詰め
 MESSAGE=$(echo -e "$PARTS" | head -c 3000)
+MESSAGE=$(escape_mrkdwn "$MESSAGE")
 
 debug "Sending to Slack API (as bot)"
 
