@@ -2,8 +2,8 @@
 set -uo pipefail
 
 # ── デバッグログ ──
-DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
-DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
+DEBUG_ENABLED="${CC_SLACK_HOOK_DEBUG:-0}"
+DEBUG_LOG="${CC_CC_SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
 
 init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
@@ -81,7 +81,7 @@ debug "=== Start hook started ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./i18n.sh
 . "${SCRIPT_DIR}/i18n.sh"
-LOCALE=$(resolve_locale "${SLACK_LOCALE:-}")
+LOCALE=$(resolve_locale "${CC_SLACK_LOCALE:-}")
 debug "LOCALE=$LOCALE"
 
 # ── 共通: ファイル更新時刻取得（macOS/Linux両対応） ──
@@ -103,8 +103,8 @@ INPUT=$(cat)
 debug "INPUT keys: $(echo "$INPUT" | jq -r 'keys | join(", ")' 2>/dev/null)"
 
 # ── 2. 前提チェック ──
-if [ -z "${SLACK_USER_TOKEN:-}" ] || [ -z "${SLACK_CHANNEL:-}" ]; then
-  debug "EXIT: no SLACK_USER_TOKEN or SLACK_CHANNEL"
+if [ -z "${CC_SLACK_USER_TOKEN:-}" ] || [ -z "${CC_SLACK_CHANNEL:-}" ]; then
+  debug "EXIT: no CC_SLACK_USER_TOKEN or CC_SLACK_CHANNEL"
   exit 0
 fi
 
@@ -164,7 +164,7 @@ PROJECT_INFO_ESCAPED=$(escape_mrkdwn "$PROJECT_INFO")
 # ── 6. スレッド管理 ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
 THREAD_CWD_FILE="${THREAD_FILE}.cwd"
-THREAD_TIMEOUT=${SLACK_THREAD_TIMEOUT:-1800}  # デフォルト30分
+THREAD_TIMEOUT=${CC_SLACK_THREAD_TIMEOUT:-1800}  # デフォルト30分
 THREAD_TS=""
 
 if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
@@ -230,7 +230,7 @@ fi
 BLOCKS=$(jq -n --arg text "$TEXT" '[{"type":"section","text":{"type":"mrkdwn","text":$text}}]')
 
 BODY=$(jq -n \
-  --arg channel "$SLACK_CHANNEL" \
+  --arg channel "$CC_SLACK_CHANNEL" \
   --arg text "$TEXT" \
   --argjson blocks "$BLOCKS" \
   '{"channel":$channel,"text":$text,"blocks":$blocks}')
@@ -244,7 +244,7 @@ debug "Sending to Slack API (as user)"
 
 RESPONSE=$(curl -s -X POST \
   -H 'Content-Type: application/json; charset=utf-8' \
-  -H "Authorization: Bearer ${SLACK_USER_TOKEN}" \
+  -H "Authorization: Bearer ${CC_SLACK_USER_TOKEN}" \
   --data "$BODY" \
   --connect-timeout 10 \
   --max-time 20 \

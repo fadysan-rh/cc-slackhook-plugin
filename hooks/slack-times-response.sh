@@ -2,8 +2,8 @@
 set -uo pipefail
 
 # ── デバッグログ ──
-DEBUG_ENABLED="${SLACK_HOOK_DEBUG:-0}"
-DEBUG_LOG="${SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
+DEBUG_ENABLED="${CC_SLACK_HOOK_DEBUG:-0}"
+DEBUG_LOG="${CC_CC_SLACK_HOOK_DEBUG_LOG:-$HOME/.claude/slack-times-debug.log}"
 
 init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
@@ -119,7 +119,7 @@ debug "=== Stop hook started ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./i18n.sh
 . "${SCRIPT_DIR}/i18n.sh"
-LOCALE=$(resolve_locale "${SLACK_LOCALE:-}")
+LOCALE=$(resolve_locale "${CC_SLACK_LOCALE:-}")
 debug "LOCALE=$LOCALE"
 
 # ── 1. stdin から JSON を読み取り ──
@@ -133,7 +133,7 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 # ── 3. 前提チェック ──
-if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_CHANNEL:-}" ]; then
+if [ -z "${CC_SLACK_BOT_TOKEN:-}" ] || [ -z "${CC_SLACK_CHANNEL:-}" ]; then
   exit 0
 fi
 
@@ -187,7 +187,7 @@ post_to_slack() {
 
   local body
   body=$(jq -n \
-    --arg channel "$SLACK_CHANNEL" \
+    --arg channel "$CC_SLACK_CHANNEL" \
     --arg text "$text" \
     --argjson blocks "$blocks" \
     --arg thread_ts "$THREAD_TS" \
@@ -198,7 +198,7 @@ post_to_slack() {
   local response
   response=$(curl -sS -X POST \
     -H 'Content-Type: application/json; charset=utf-8' \
-    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+    -H "Authorization: Bearer ${CC_SLACK_BOT_TOKEN}" \
     --data "$body" \
     --connect-timeout 10 \
     --max-time 20 \

@@ -47,7 +47,7 @@ Slack:
 
 - One Slack thread per active session
 - Starts a new thread after 30 minutes of idle time or when the working directory changes
-- Timeout is configurable via `SLACK_THREAD_TIMEOUT`
+- Timeout is configurable via `CC_SLACK_THREAD_TIMEOUT`
 
 ## Install
 
@@ -71,25 +71,25 @@ Add these environment variables to `~/.claude/settings.json`:
 ```jsonc
 {
   "env": {
-    "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer posts (as user)
-    "SLACK_BOT_TOKEN": "xoxb-...",    // Summary posts (as bot)
-    "SLACK_CHANNEL": "C0XXXXXXX",     // Target channel ID
-    "SLACK_LOCALE": "ja",             // Message locale: ja / en (default: ja)
-    "SLACK_HOOK_DEBUG": "0",          // Optional: set 1 to enable debug logs
-    "SLACK_HOOK_DEBUG_LOG": ""        // Optional: custom debug log path
+    "CC_SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer posts (as user)
+    "CC_SLACK_BOT_TOKEN": "xoxb-...",    // Summary posts (as bot)
+    "CC_SLACK_CHANNEL": "C0XXXXXXX",     // Target channel ID
+    "CC_SLACK_LOCALE": "ja",             // Message locale: ja / en (default: ja)
+    "CC_SLACK_HOOK_DEBUG": "0",          // Optional: set 1 to enable debug logs
+    "CC_CC_SLACK_HOOK_DEBUG_LOG": ""        // Optional: custom debug log path
   }
 }
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `SLACK_USER_TOKEN` | Yes | Token for prompt/answer notifications (posted as the user) |
-| `SLACK_BOT_TOKEN` | Yes | Token for stop summary notifications (posted as the bot) |
-| `SLACK_CHANNEL` | Yes | Target Slack channel ID |
-| `SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
-| `SLACK_LOCALE` | No | Notification locale: `ja` or `en` (default: `ja`) |
-| `SLACK_HOOK_DEBUG` | No | Set `1` to enable hook debug logs (default: disabled) |
-| `SLACK_HOOK_DEBUG_LOG` | No | Debug log path (default: `$HOME/.claude/slack-times-debug.log`) |
+| `CC_SLACK_USER_TOKEN` | Yes | Token for prompt/answer notifications (posted as the user) |
+| `CC_SLACK_BOT_TOKEN` | Yes | Token for stop summary notifications (posted as the bot) |
+| `CC_SLACK_CHANNEL` | Yes | Target Slack channel ID |
+| `CC_SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: `1800`) |
+| `CC_SLACK_LOCALE` | No | Notification locale: `ja` or `en` (default: `ja`) |
+| `CC_SLACK_HOOK_DEBUG` | No | Set `1` to enable hook debug logs (default: disabled) |
+| `CC_CC_SLACK_HOOK_DEBUG_LOG` | No | Debug log path (default: `$HOME/.claude/slack-times-debug.log`) |
 
 ## Slack App Setup
 
@@ -104,45 +104,9 @@ Add these environment variables to `~/.claude/settings.json`:
 3. Install the app in your workspace and copy the tokens.
 4. Invite the app to the target channel (`/invite @your-app`).
 
-## Architecture
+## Contributing
 
-```
-hooks/
-├── hooks.json                 # Hook definitions (event -> script)
-├── slack-times-prompt.sh      # UserPromptSubmit -> Slack post
-├── slack-times-answer.sh      # PostToolUse(AskUserQuestion) -> thread reply
-└── slack-times-response.sh    # Stop -> thread summary
-```
-
-Posting behavior:
-- Prompt / Answer: posted with `SLACK_USER_TOKEN` as the user
-- Summary: posted with `SLACK_BOT_TOKEN` as the bot
-
-## Development
-
-```bash
-# Run hook regression tests
-tests/run-hooks-tests.sh
-```
-
-Debug logs are disabled by default.  
-Set `SLACK_HOOK_DEBUG=1` to enable logging.  
-Default log path is `$HOME/.claude/slack-times-debug.log` (mode `600`).
-
-## Release
-
-```bash
-# Validate plugin and marketplace manifests
-claude plugin validate .claude-plugin/plugin.json
-claude plugin validate .claude-plugin/marketplace.json
-
-# Run tests
-tests/run-hooks-tests.sh
-
-# Publish a release tag
-git tag v1.1.0
-git push origin v1.1.0
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture, development, and release information.
 
 ## License
 

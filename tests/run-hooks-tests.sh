@@ -190,10 +190,10 @@ run_stop_hook() {
   HOME="$test_home" \
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="$curl_mode" \
-  SLACK_BOT_TOKEN="xoxb-test" \
-  SLACK_CHANNEL="C_TEST" \
-  SLACK_HOOK_DEBUG="1" \
-  SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+  CC_SLACK_BOT_TOKEN="xoxb-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
     bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
 
   echo "$status"
@@ -224,17 +224,17 @@ run_prompt_hook() {
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_USER_TOKEN="xoxp-test" \
-    SLACK_CHANNEL="C_TEST" \
-    SLACK_LOCALE="$locale" \
+    CC_SLACK_USER_TOKEN="xoxp-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_LOCALE="$locale" \
       bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
   else
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_USER_TOKEN="xoxp-test" \
-    SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_USER_TOKEN="xoxp-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
       bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
   fi
 
@@ -272,17 +272,17 @@ run_answer_hook() {
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_USER_TOKEN="xoxp-test" \
-    SLACK_CHANNEL="C_TEST" \
-    SLACK_LOCALE="$locale" \
+    CC_SLACK_USER_TOKEN="xoxp-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_LOCALE="$locale" \
       bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
   else
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_USER_TOKEN="xoxp-test" \
-    SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_USER_TOKEN="xoxp-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
       bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
   fi
 
@@ -321,21 +321,21 @@ run_stop_hook_capture() {
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_BOT_TOKEN="xoxb-test" \
-    SLACK_CHANNEL="C_TEST" \
-    SLACK_LOCALE="$locale" \
-    SLACK_HOOK_DEBUG="1" \
-    SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+    CC_SLACK_BOT_TOKEN="xoxb-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_LOCALE="$locale" \
+    CC_SLACK_HOOK_DEBUG="1" \
+    CC_CC_SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
       bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
   else
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
     MOCK_CURL_MODE="ok" \
     MOCK_CURL_CAPTURE="$capture_file" \
-    SLACK_BOT_TOKEN="xoxb-test" \
-    SLACK_CHANNEL="C_TEST" \
-    SLACK_HOOK_DEBUG="1" \
-    SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+    CC_SLACK_BOT_TOKEN="xoxb-test" \
+    CC_SLACK_CHANNEL="C_TEST" \
+    CC_SLACK_HOOK_DEBUG="1" \
+    CC_CC_SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
       bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
   fi
 
@@ -464,8 +464,8 @@ test_prompt_invalid_session_id() {
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="ok" \
   MOCK_CURL_CAPTURE="$capture_file" \
-  SLACK_USER_TOKEN="xoxp-test" \
-  SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
     bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
 
   assert_zero "prompt_invalid_session_id_exit" "$status"
@@ -536,10 +536,10 @@ test_prompt_debug_log_permission_when_enabled() {
   HOME="$test_home" \
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="ok" \
-  SLACK_USER_TOKEN="xoxp-test" \
-  SLACK_CHANNEL="C_TEST" \
-  SLACK_HOOK_DEBUG="1" \
-  SLACK_HOOK_DEBUG_LOG="$debug_log" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$debug_log" \
     bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
 
   assert_zero "prompt_debug_enabled_exit" "$status"
@@ -590,8 +590,8 @@ test_prompt_symlink_thread_cwd_not_followed() {
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="ok" \
   MOCK_CURL_CAPTURE="$capture_file" \
-  SLACK_USER_TOKEN="xoxp-test" \
-  SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
     bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
 
   local victim_after
@@ -737,8 +737,8 @@ test_answer_symlink_thread_file_not_followed() {
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="ok" \
   MOCK_CURL_CAPTURE="$capture_file" \
-  SLACK_USER_TOKEN="xoxp-test" \
-  SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
     bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
 
   local victim_after
@@ -814,10 +814,10 @@ test_stop_symlink_thread_file_not_followed() {
   PATH="${mock_bin}:${PATH}" \
   MOCK_CURL_MODE="ok" \
   MOCK_CURL_CAPTURE="$capture_file" \
-  SLACK_BOT_TOKEN="xoxb-test" \
-  SLACK_CHANNEL="C_TEST" \
-  SLACK_HOOK_DEBUG="1" \
-  SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+  CC_SLACK_BOT_TOKEN="xoxb-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
     bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
 
   local victim_after

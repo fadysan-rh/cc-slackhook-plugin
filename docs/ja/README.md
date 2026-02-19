@@ -47,7 +47,7 @@ Slack:
 
 - 同一セッションの通知を 1 つの Slack スレッドに集約
 - 30 分アイドル、または作業ディレクトリ変更で新規スレッドを開始
-- タイムアウトは `SLACK_THREAD_TIMEOUT` で変更可能
+- タイムアウトは `CC_SLACK_THREAD_TIMEOUT` で変更可能
 
 ## Install
 
@@ -69,25 +69,25 @@ claude --plugin-dir /path/to/cc-slackhook-plugin
 ```jsonc
 {
   "env": {
-    "SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer 通知（ユーザーとして投稿）
-    "SLACK_BOT_TOKEN": "xoxb-...",    // Summary 通知（Botとして投稿）
-    "SLACK_CHANNEL": "C0XXXXXXX",     // 通知先チャンネルID
-    "SLACK_LOCALE": "ja",             // 通知文言の言語: ja / en（既定: ja）
-    "SLACK_HOOK_DEBUG": "0",          // 任意: 1 でデバッグログ有効化
-    "SLACK_HOOK_DEBUG_LOG": ""        // 任意: デバッグログ保存先
+    "CC_SLACK_USER_TOKEN": "xoxp-...",   // Prompt/Answer 通知（ユーザーとして投稿）
+    "CC_SLACK_BOT_TOKEN": "xoxb-...",    // Summary 通知（Botとして投稿）
+    "CC_SLACK_CHANNEL": "C0XXXXXXX",     // 通知先チャンネルID
+    "CC_SLACK_LOCALE": "ja",             // 通知文言の言語: ja / en（既定: ja）
+    "CC_SLACK_HOOK_DEBUG": "0",          // 任意: 1 でデバッグログ有効化
+    "CC_CC_SLACK_HOOK_DEBUG_LOG": ""        // 任意: デバッグログ保存先
   }
 }
 ```
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `SLACK_USER_TOKEN` | Yes | プロンプト/回答通知用トークン（ユーザーとして投稿） |
-| `SLACK_BOT_TOKEN` | Yes | 作業完了サマリー通知用トークン（Botとして投稿） |
-| `SLACK_CHANNEL` | Yes | 通知先 Slack チャンネル ID |
-| `SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
-| `SLACK_LOCALE` | No | 通知文言の言語。`ja` または `en`（既定: `ja`） |
-| `SLACK_HOOK_DEBUG` | No | `1` で Hook のデバッグログを有効化（既定: 無効） |
-| `SLACK_HOOK_DEBUG_LOG` | No | デバッグログの出力先（既定: `$HOME/.claude/slack-times-debug.log`） |
+| `CC_SLACK_USER_TOKEN` | Yes | プロンプト/回答通知用トークン（ユーザーとして投稿） |
+| `CC_SLACK_BOT_TOKEN` | Yes | 作業完了サマリー通知用トークン（Botとして投稿） |
+| `CC_SLACK_CHANNEL` | Yes | 通知先 Slack チャンネル ID |
+| `CC_SLACK_THREAD_TIMEOUT` | No | 新規スレッド開始までの秒数（既定: `1800`） |
+| `CC_SLACK_LOCALE` | No | 通知文言の言語。`ja` または `en`（既定: `ja`） |
+| `CC_SLACK_HOOK_DEBUG` | No | `1` で Hook のデバッグログを有効化（既定: 無効） |
+| `CC_CC_SLACK_HOOK_DEBUG_LOG` | No | デバッグログの出力先（既定: `$HOME/.claude/slack-times-debug.log`） |
 
 ## Slack App Setup
 
@@ -102,45 +102,9 @@ claude --plugin-dir /path/to/cc-slackhook-plugin
 3. App をワークスペースにインストールし、トークンを取得します。
 4. 通知先チャンネルに App を招待します（`/invite @your-app`）。
 
-## Architecture
+## Contributing
 
-```
-hooks/
-├── hooks.json                 # Hook定義（event -> script）
-├── slack-times-prompt.sh      # UserPromptSubmit -> Slack投稿
-├── slack-times-answer.sh      # PostToolUse(AskUserQuestion) -> スレッド返信
-└── slack-times-response.sh    # Stop -> 作業サマリー投稿
-```
-
-投稿の使い分け:
-- Prompt / Answer: `SLACK_USER_TOKEN` でユーザーとして投稿
-- Summary: `SLACK_BOT_TOKEN` で Bot として投稿
-
-## Development
-
-```bash
-# Hook のリグレッションテストを実行
-tests/run-hooks-tests.sh
-```
-
-デバッグログは既定で無効です。  
-`SLACK_HOOK_DEBUG=1` で有効化できます。  
-既定の出力先は `$HOME/.claude/slack-times-debug.log`（権限 `600`）です。
-
-## Release
-
-```bash
-# plugin / marketplace マニフェストの検証
-claude plugin validate .claude-plugin/plugin.json
-claude plugin validate .claude-plugin/marketplace.json
-
-# テスト実行
-tests/run-hooks-tests.sh
-
-# リリースタグを公開
-git tag v1.1.0
-git push origin v1.1.0
-```
+アーキテクチャ、開発方法、リリース手順は [CONTRIBUTING.md](../../CONTRIBUTING.md) を参照してください。
 
 ## License
 
