@@ -9,9 +9,24 @@ init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
     return 0
   fi
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
   local log_dir
   log_dir=$(dirname "$DEBUG_LOG")
-  (umask 077 && mkdir -p "$log_dir" && touch "$DEBUG_LOG") 2>/dev/null || return 0
+  (umask 077 && mkdir -p "$log_dir") 2>/dev/null || {
+    DEBUG_ENABLED=0
+    return 0
+  }
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
+  (umask 077 && touch "$DEBUG_LOG") 2>/dev/null || {
+    DEBUG_ENABLED=0
+    return 0
+  }
   chmod 600 "$DEBUG_LOG" 2>/dev/null || true
 }
 
@@ -19,7 +34,11 @@ debug() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
     return 0
   fi
-  echo "[$(date '+%H:%M:%S')] [start] $*" >> "$DEBUG_LOG"
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
+  printf "[%s] [start] %s\n" "$(date '+%H:%M:%S')" "$*" >> "$DEBUG_LOG" 2>/dev/null || true
 }
 
 is_valid_session_id() {
@@ -31,6 +50,21 @@ is_valid_session_id() {
 
 escape_mrkdwn() {
   printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+is_safe_debug_log_path() {
+  local path="$1"
+  [ -n "$path" ] || return 1
+  case "$path" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  if [ -L "$path" ]; then
+    return 1
+  fi
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    return 1
+  fi
+  return 0
 }
 
 sanitize_state_file_path() {
@@ -71,6 +105,35 @@ write_state_file_atomic() {
     return 1
   fi
   chmod 600 "$path" 2>/dev/null || true
+  return 0
+}
+
+post_to_slack() {
+  local body="$1"
+  local response
+  response=$(curl -sS -X POST \
+    -H 'Content-Type: application/json; charset=utf-8' \
+    -H "Authorization: Bearer ${CC_SLACK_USER_TOKEN}" \
+    --data "$body" \
+    --connect-timeout 10 \
+    --max-time 20 \
+    "https://slack.com/api/chat.postMessage")
+  local curl_status=$?
+  if [ "$curl_status" -ne 0 ]; then
+    debug "ERROR: curl failed status=$curl_status"
+    return 1
+  fi
+
+  local ok
+  ok=$(echo "$response" | jq -r '.ok // false' 2>/dev/null || echo "false")
+  if [ "$ok" != "true" ]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown_error"' 2>/dev/null || echo "invalid_json_response")
+    debug "ERROR: Slack API failed error=$error response=${response:0:200}"
+    return 1
+  fi
+
+  printf "%s" "$response"
   return 0
 }
 
@@ -242,13 +305,10 @@ fi
 
 debug "Sending to Slack API (as user)"
 
-RESPONSE=$(curl -s -X POST \
-  -H 'Content-Type: application/json; charset=utf-8' \
-  -H "Authorization: Bearer ${CC_SLACK_USER_TOKEN}" \
-  --data "$BODY" \
-  --connect-timeout 10 \
-  --max-time 20 \
-  "https://slack.com/api/chat.postMessage" 2>/dev/null || true)
+if ! RESPONSE=$(post_to_slack "$BODY"); then
+  debug "EXIT: failed to post prompt notification"
+  exit 0
+fi
 
 debug "RESPONSE: ${RESPONSE:0:200}"
 

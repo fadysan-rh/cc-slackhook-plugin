@@ -9,9 +9,24 @@ init_debug_log() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
     return 0
   fi
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
   local log_dir
   log_dir=$(dirname "$DEBUG_LOG")
-  (umask 077 && mkdir -p "$log_dir" && touch "$DEBUG_LOG") 2>/dev/null || return 0
+  (umask 077 && mkdir -p "$log_dir") 2>/dev/null || {
+    DEBUG_ENABLED=0
+    return 0
+  }
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
+  (umask 077 && touch "$DEBUG_LOG") 2>/dev/null || {
+    DEBUG_ENABLED=0
+    return 0
+  }
   chmod 600 "$DEBUG_LOG" 2>/dev/null || true
 }
 
@@ -19,7 +34,11 @@ debug() {
   if [ "$DEBUG_ENABLED" != "1" ]; then
     return 0
   fi
-  echo "[$(date '+%H:%M:%S')] [stop] $*" >> "$DEBUG_LOG"
+  if ! is_safe_debug_log_path "$DEBUG_LOG"; then
+    DEBUG_ENABLED=0
+    return 0
+  fi
+  printf "[%s] [stop] %s\n" "$(date '+%H:%M:%S')" "$*" >> "$DEBUG_LOG" 2>/dev/null || true
 }
 
 is_valid_session_id() {
@@ -31,6 +50,21 @@ is_valid_session_id() {
 
 escape_mrkdwn() {
   printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+is_safe_debug_log_path() {
+  local path="$1"
+  [ -n "$path" ] || return 1
+  case "$path" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  if [ -L "$path" ]; then
+    return 1
+  fi
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    return 1
+  fi
+  return 0
 }
 
 normalize_path() {
@@ -46,6 +80,24 @@ normalize_path() {
     return 1
   fi
   printf "%s/%s" "$dir_real" "$base"
+}
+
+normalize_dir_path() {
+  local path="$1"
+  local dir_real
+
+  [ -n "$path" ] || return 1
+  case "$path" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  case "$path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  if ! dir_real=$(cd -P "$path" 2>/dev/null && pwd -P); then
+    return 1
+  fi
+  printf "%s" "$dir_real"
 }
 
 sanitize_state_file_path() {
@@ -102,8 +154,7 @@ is_safe_transcript_path() {
   fi
 
   if [ -n "$cwd" ]; then
-    normalized_cwd=$(normalize_path "$cwd/placeholder") || return 1
-    normalized_cwd=$(dirname "$normalized_cwd")
+    normalized_cwd=$(normalize_dir_path "$cwd") || return 1
     if [[ "$normalized_path" == "$normalized_cwd/"* ]]; then
       return 0
     fi
@@ -144,29 +195,40 @@ fi
 # ── 4. 入力値の取得 ──
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
-CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
+CWD_INPUT=$(echo "$INPUT" | jq -r '.cwd // ""')
 
 if ! is_valid_session_id "$SESSION_ID"; then
   debug "EXIT: invalid session_id"
   exit 0
 fi
 
-if [ -n "$TRANSCRIPT_PATH" ] && ! is_safe_transcript_path "$TRANSCRIPT_PATH" "$CWD"; then
+# ── スレッド状態ファイルの読み取り ──
+THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
+THREAD_CWD_FILE="${THREAD_FILE}.cwd"
+THREAD_TS=""
+TRUSTED_CWD=""
+
+if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
+  exit 0
+fi
+if ! sanitize_state_file_path "$THREAD_CWD_FILE" "thread_cwd"; then
+  exit 0
+fi
+
+if [ -f "$THREAD_CWD_FILE" ]; then
+  THREAD_CWD_RAW=$(cat "$THREAD_CWD_FILE" 2>/dev/null || true)
+  TRUSTED_CWD=$(normalize_dir_path "$THREAD_CWD_RAW" 2>/dev/null || true)
+fi
+
+if [ -n "$TRANSCRIPT_PATH" ] && ! is_safe_transcript_path "$TRANSCRIPT_PATH" "$TRUSTED_CWD"; then
   debug "EXIT: unsafe transcript_path"
   exit 0
 fi
 
 debug "SESSION_ID=$SESSION_ID"
 debug "TRANSCRIPT_PATH=$TRANSCRIPT_PATH"
-debug "CWD=$CWD"
-
-# ── スレッド ts の読み取り ──
-THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
-THREAD_TS=""
-
-if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
-  exit 0
-fi
+debug "CWD_INPUT=$CWD_INPUT"
+debug "TRUSTED_CWD=$TRUSTED_CWD"
 
 if [ -f "$THREAD_FILE" ]; then
   THREAD_TS=$(cat "$THREAD_FILE" 2>/dev/null || true)
@@ -287,8 +349,8 @@ TRANSCRIPT_FILES=$(jq -r '
 ' "$TURN_LINES_FILE" 2>/dev/null | sort -u || true)
 
 REPO_ROOT=""
-if [ -n "$CWD" ] && git -C "$CWD" rev-parse --is-inside-work-tree &>/dev/null; then
-  REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$TRUSTED_CWD" ] && git -C "$TRUSTED_CWD" rev-parse --is-inside-work-tree &>/dev/null; then
+  REPO_ROOT=$(git -C "$TRUSTED_CWD" rev-parse --show-toplevel 2>/dev/null || true)
 fi
 
 # git差分からD/Rを含む全変更を取得
@@ -305,10 +367,14 @@ if [ -n "$REPO_ROOT" ]; then
 fi
 
 CHANGED_FILES=""
-if [ -n "$TRANSCRIPT_FILES" ] && [ -n "$CWD" ]; then
+if [ -n "$TRANSCRIPT_FILES" ] && [ -n "$TRUSTED_CWD" ]; then
   CHANGED_FILES=$(echo "$TRANSCRIPT_FILES" | while IFS= read -r filepath; do
     [ -z "$filepath" ] && continue
-    REL_PATH=$(echo "$filepath" | sed "s|^${CWD}/||")
+    if [[ "$filepath" == "$TRUSTED_CWD/"* ]]; then
+      REL_PATH="${filepath#"$TRUSTED_CWD"/}"
+    else
+      REL_PATH="$filepath"
+    fi
 
     # ファイルステータス判定
     STATUS="M"

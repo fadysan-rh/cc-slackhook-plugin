@@ -116,6 +116,19 @@ file_mode() {
   echo "unknown"
 }
 
+file_mtime() {
+  local path="$1"
+  if stat -f %m "$path" >/dev/null 2>&1; then
+    stat -f %m "$path"
+    return 0
+  fi
+  if stat -c %Y "$path" >/dev/null 2>&1; then
+    stat -c %Y "$path"
+    return 0
+  fi
+  echo 0
+}
+
 write_mock_curl() {
   local mock_bin="$1"
   mkdir -p "$mock_bin"
@@ -178,6 +191,7 @@ run_stop_hook() {
   write_mock_curl "$mock_bin"
 
   echo -n "1700000000.000001" > "${test_home}/.claude/.slack-thread-${session_id}"
+  printf "%s" "$repo_dir" > "${test_home}/.claude/.slack-thread-${session_id}.cwd"
 
   local input
   input=$(jq -nc \
@@ -204,6 +218,7 @@ run_prompt_hook() {
   local session_id="$2"
   local prompt_text="$3"
   local locale="${4:-}"
+  local curl_mode="${5:-ok}"
 
   local test_home="${repo_dir}/.home"
   local mock_bin="${repo_dir}/.mock-bin"
@@ -222,7 +237,7 @@ run_prompt_hook() {
   if [ -n "$locale" ]; then
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
-    MOCK_CURL_MODE="ok" \
+    MOCK_CURL_MODE="$curl_mode" \
     MOCK_CURL_CAPTURE="$capture_file" \
     CC_SLACK_USER_TOKEN="xoxp-test" \
     CC_SLACK_CHANNEL="C_TEST" \
@@ -231,7 +246,7 @@ run_prompt_hook() {
   else
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
-    MOCK_CURL_MODE="ok" \
+    MOCK_CURL_MODE="$curl_mode" \
     MOCK_CURL_CAPTURE="$capture_file" \
     CC_SLACK_USER_TOKEN="xoxp-test" \
     CC_SLACK_CHANNEL="C_TEST" \
@@ -251,6 +266,7 @@ run_answer_hook() {
   local session_id="$2"
   local tool_response="$3"
   local locale="${4:-}"
+  local curl_mode="${5:-ok}"
 
   local test_home="${repo_dir}/.home"
   local mock_bin="${repo_dir}/.mock-bin"
@@ -270,7 +286,7 @@ run_answer_hook() {
   if [ -n "$locale" ]; then
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
-    MOCK_CURL_MODE="ok" \
+    MOCK_CURL_MODE="$curl_mode" \
     MOCK_CURL_CAPTURE="$capture_file" \
     CC_SLACK_USER_TOKEN="xoxp-test" \
     CC_SLACK_CHANNEL="C_TEST" \
@@ -279,7 +295,7 @@ run_answer_hook() {
   else
     HOME="$test_home" \
     PATH="${mock_bin}:${PATH}" \
-    MOCK_CURL_MODE="ok" \
+    MOCK_CURL_MODE="$curl_mode" \
     MOCK_CURL_CAPTURE="$capture_file" \
     CC_SLACK_USER_TOKEN="xoxp-test" \
     CC_SLACK_CHANNEL="C_TEST" \
@@ -307,6 +323,7 @@ run_stop_hook_capture() {
   write_mock_curl "$mock_bin"
 
   echo -n "1700000000.000001" > "${test_home}/.claude/.slack-thread-${session_id}"
+  printf "%s" "$repo_dir" > "${test_home}/.claude/.slack-thread-${session_id}.cwd"
 
   local input
   input=$(jq -nc \
@@ -560,6 +577,79 @@ test_prompt_debug_log_permission_when_enabled() {
   rm -rf "$tmp_dir"
 }
 
+test_prompt_invalid_auth_does_not_persist_thread() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local session_id="test-prompt-invalid-auth"
+  local thread_file="${repo_dir}/.home/.claude/.slack-thread-${session_id}"
+  local result
+  result=$(run_prompt_hook "$repo_dir" "$session_id" "hello" "en" "invalid_auth")
+  local status
+  status=$(echo "$result" | jq -r '.status')
+
+  assert_zero "prompt_invalid_auth_exit" "$status"
+  assert_file_absent "prompt_invalid_auth_no_thread_file" "$thread_file"
+
+  rm -rf "$tmp_dir"
+}
+
+test_prompt_debug_log_symlink_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/prompt-body.json"
+  local victim_file="${repo_dir}/victim.log"
+  local debug_link="${repo_dir}/debug-link.log"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  printf "SAFE" > "$victim_file"
+  chmod 644 "$victim_file"
+  ln -s "$victim_file" "$debug_link"
+  local before_mode
+  before_mode=$(file_mode "$victim_file")
+
+  local input
+  input=$(jq -nc \
+    --arg sid "test-prompt-debug-symlink" \
+    --arg prompt "hello" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, prompt:$prompt, cwd:$cwd}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$debug_link" \
+    bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+  local after_mode
+  after_mode=$(file_mode "$victim_file")
+
+  assert_zero "prompt_debug_symlink_exit" "$status"
+  assert_not_contains "prompt_debug_symlink_victim_not_modified" "$victim_after" "[start]"
+  if [ "$before_mode" = "$after_mode" ]; then
+    pass "prompt_debug_symlink_mode_unchanged"
+  else
+    fail "prompt_debug_symlink_mode_unchanged" "mode changed: ${before_mode} -> ${after_mode}"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
 test_prompt_symlink_thread_cwd_not_followed() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -708,6 +798,106 @@ test_answer_escape_mrkdwn_mentions() {
   rm -rf "$tmp_dir"
 }
 
+test_answer_invalid_auth_does_not_refresh_thread() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local session_id="test-answer-invalid-auth"
+  local thread_file="${test_home}/.claude/.slack-thread-${session_id}"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+  printf "1700000000.000001" > "$thread_file"
+
+  local before_mtime
+  before_mtime=$(file_mtime "$thread_file")
+  sleep 1
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg tr "yes" \
+    '{session_id:$sid, tool_response:$tr}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="invalid_auth" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+    bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local after_mtime
+  after_mtime=$(file_mtime "$thread_file")
+
+  assert_zero "answer_invalid_auth_exit" "$status"
+  if [ "$before_mtime" = "$after_mtime" ]; then
+    pass "answer_invalid_auth_no_thread_refresh"
+  else
+    fail "answer_invalid_auth_no_thread_refresh" "thread file mtime changed"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
+test_answer_debug_log_symlink_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/answer-body.json"
+  local session_id="test-answer-debug-symlink"
+  local thread_file="${test_home}/.claude/.slack-thread-${session_id}"
+  local victim_file="${repo_dir}/victim.log"
+  local debug_link="${repo_dir}/debug-link.log"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+  printf "1700000000.000001" > "$thread_file"
+  printf "SAFE" > "$victim_file"
+  chmod 644 "$victim_file"
+  ln -s "$victim_file" "$debug_link"
+  local before_mode
+  before_mode=$(file_mode "$victim_file")
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg tr "yes" \
+    '{session_id:$sid, tool_response:$tr}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  CC_SLACK_USER_TOKEN="xoxp-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$debug_link" \
+    bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+  local after_mode
+  after_mode=$(file_mode "$victim_file")
+
+  assert_zero "answer_debug_symlink_exit" "$status"
+  assert_not_contains "answer_debug_symlink_victim_not_modified" "$victim_after" "[answer]"
+  if [ "$before_mode" = "$after_mode" ]; then
+    pass "answer_debug_symlink_mode_unchanged"
+  else
+    fail "answer_debug_symlink_mode_unchanged" "mode changed: ${before_mode} -> ${after_mode}"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
 test_answer_symlink_thread_file_not_followed() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -725,6 +915,7 @@ test_answer_symlink_thread_file_not_followed() {
 
   printf "ORIGINAL" > "$victim_file"
   ln -s "$victim_file" "$thread_file"
+  printf "%s" "$repo_dir" > "${test_home}/.claude/.slack-thread-${session_id}.cwd"
 
   local input
   input=$(jq -nc \
@@ -827,6 +1018,66 @@ test_stop_symlink_thread_file_not_followed() {
   assert_contains "stop_symlink_thread_victim_unchanged" "$victim_after" "ORIGINAL"
   assert_file_absent "stop_symlink_thread_no_post" "$capture_file"
   assert_file_absent "stop_symlink_thread_removed" "$thread_file"
+
+  rm -rf "$tmp_dir"
+}
+
+test_stop_debug_log_symlink_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local transcript="${repo_dir}/transcript-stop-debug-symlink.jsonl"
+  cp "${FIXTURES_DIR}/stop-invalid-auth.jsonl" "$transcript"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local session_id="test-stop-debug-symlink"
+  local capture_file="${repo_dir}/stop-body.json"
+  local victim_file="${repo_dir}/victim.log"
+  local debug_link="${repo_dir}/debug-link.log"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  printf "1700000000.000001" > "${test_home}/.claude/.slack-thread-${session_id}"
+  printf "%s" "$repo_dir" > "${test_home}/.claude/.slack-thread-${session_id}.cwd"
+  printf "SAFE" > "$victim_file"
+  chmod 644 "$victim_file"
+  ln -s "$victim_file" "$debug_link"
+  local before_mode
+  before_mode=$(file_mode "$victim_file")
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg path "$transcript" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, transcript_path:$path, cwd:$cwd, stop_hook_active:false}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  CC_SLACK_BOT_TOKEN="xoxb-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$debug_link" \
+    bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+  local after_mode
+  after_mode=$(file_mode "$victim_file")
+
+  assert_zero "stop_debug_symlink_exit" "$status"
+  assert_not_contains "stop_debug_symlink_victim_not_modified" "$victim_after" "[stop]"
+  if [ "$before_mode" = "$after_mode" ]; then
+    pass "stop_debug_symlink_mode_unchanged"
+  else
+    fail "stop_debug_symlink_mode_unchanged" "mode changed: ${before_mode} -> ${after_mode}"
+  fi
 
   rm -rf "$tmp_dir"
 }
@@ -959,6 +1210,49 @@ EOF
   rm -rf "$tmp_dir"
 }
 
+test_stop_reject_without_trusted_thread_cwd() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local transcript="${repo_dir}/transcript-no-trusted-cwd.jsonl"
+  cp "${FIXTURES_DIR}/stop-invalid-auth.jsonl" "$transcript"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local session_id="test-stop-no-thread-cwd"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+  printf "1700000000.000001" > "${test_home}/.claude/.slack-thread-${session_id}"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg path "$transcript" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, transcript_path:$path, cwd:$cwd, stop_hook_active:false}')
+
+  local log_start
+  log_start=$(debug_line_count)
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  CC_SLACK_BOT_TOKEN="xoxb-test" \
+  CC_SLACK_CHANNEL="C_TEST" \
+  CC_SLACK_HOOK_DEBUG="1" \
+  CC_CC_SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+    bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
+  local logs
+  logs=$(debug_slice "$log_start")
+
+  assert_zero "stop_no_trusted_cwd_exit" "$status"
+  assert_contains "stop_no_trusted_cwd_rejected" "$logs" "EXIT: unsafe transcript_path"
+
+  rm -rf "$tmp_dir"
+}
+
 test_stop_locale_en() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -1086,12 +1380,16 @@ main() {
   test_prompt_escape_mrkdwn_mentions
   test_prompt_debug_disabled_by_default
   test_prompt_debug_log_permission_when_enabled
+  test_prompt_invalid_auth_does_not_persist_thread
+  test_prompt_debug_log_symlink_not_followed
   test_prompt_symlink_thread_cwd_not_followed
   test_answer_locale_en
   test_answer_locale_ja
   test_answer_locale_invalid_fallback
   test_answer_locale_unset_fallback
   test_answer_escape_mrkdwn_mentions
+  test_answer_invalid_auth_does_not_refresh_thread
+  test_answer_debug_log_symlink_not_followed
   test_answer_symlink_thread_file_not_followed
   test_stop_locale_en
   test_stop_locale_ja
@@ -1099,12 +1397,14 @@ main() {
   test_stop_locale_unset_fallback
   test_stop_kill_message_en
   test_stop_symlink_thread_file_not_followed
+  test_stop_debug_log_symlink_not_followed
   test_stop_normal
   test_stop_dr_only
   test_stop_long_turn_window
   test_stop_invalid_auth
   test_stop_reject_unsafe_transcript_path
   test_stop_reject_transcript_path_with_dotdot
+  test_stop_reject_without_trusted_thread_cwd
 
   echo "----"
   echo "Passed: ${PASS_COUNT}"
