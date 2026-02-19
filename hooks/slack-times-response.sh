@@ -90,19 +90,21 @@ slack_format() {
       -e 's/```[a-z]*/```/g'
 }
 
-# ── 5. 最新ターンの範囲を特定（最後のユーザープロンプト以降）──
+# ── 5. 最新ターンの範囲を特定（末尾から探索して高速化）──
 sleep 1
 
 TURN_LINES_FILE=$(mktemp)
 trap "rm -f '$TURN_LINES_FILE'" EXIT
 
-# ユーザープロンプト行を特定（tool_resultはtool_use_idを含むので除外）
-LAST_PROMPT_LINE=$(grep -n '"type":"user"' "$TRANSCRIPT_PATH" 2>/dev/null | grep -v 'tool_use_id' | tail -1 | cut -d: -f1 || true)
+# 末尾200行を切り出してから最後のユーザープロンプトを探す（大規模トランスクリプト対策）
+TAIL_LINES=200
+TAIL_BUF=$(tail -n "$TAIL_LINES" "$TRANSCRIPT_PATH" 2>/dev/null || true)
+LAST_PROMPT_LINE=$(echo "$TAIL_BUF" | grep -n '"type":"user"' 2>/dev/null | grep -v 'tool_use_id' | tail -1 | cut -d: -f1 || true)
 
 if [ -n "$LAST_PROMPT_LINE" ]; then
-  tail -n +"$LAST_PROMPT_LINE" "$TRANSCRIPT_PATH" > "$TURN_LINES_FILE"
+  echo "$TAIL_BUF" | tail -n +"$LAST_PROMPT_LINE" > "$TURN_LINES_FILE"
 else
-  tail -50 "$TRANSCRIPT_PATH" > "$TURN_LINES_FILE"
+  echo "$TAIL_BUF" | tail -50 > "$TURN_LINES_FILE"
 fi
 
 # ── 作業内容: 最後のassistantテキストブロックのみ ──
