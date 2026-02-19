@@ -1,7 +1,7 @@
 {
   "name": "cc-slackhook",
   "description": "Notify Slack when Claude Code sessions start and stop. Automatically posts prompts, work summaries, changed files, and Git operations to a Slack thread.",
-  "version": "1.1.2",
+  "version": "1.1.5",
   "author": {
     "name": "fadysan-rh"
   },
