@@ -480,14 +480,10 @@ NO_DETAILS=$(i18n_text "$LOCALE" "stop_no_details")
 PARTS=""
 
 if [ -n "$CHANGED_FILES" ]; then
+  FILE_LIST=$(echo "$CHANGED_FILES" | while IFS= read -r f; do echo "• ${f}"; done)
+  PARTS="*${CHANGED_FILES_LABEL}:*\n${FILE_LIST}"
   if [ -n "$WORK_SUMMARY" ]; then
-    PARTS="*${WORK_SUMMARY_LABEL}:*\n${WORK_SUMMARY}"
-  fi
-  FILE_LIST=$(echo "$CHANGED_FILES" | while IFS= read -r f; do echo "• \`${f}\`"; done)
-  if [ -n "$PARTS" ]; then
-    PARTS="${PARTS}\n\n*${CHANGED_FILES_LABEL}:*\n${FILE_LIST}"
-  else
-    PARTS="*${CHANGED_FILES_LABEL}:*\n${FILE_LIST}"
+    PARTS="${PARTS}\n\n*${WORK_SUMMARY_LABEL}:*\n${WORK_SUMMARY}"
   fi
 elif [ -n "$WORK_SUMMARY" ]; then
   PARTS="*${ANSWER_LABEL}:*\n${WORK_SUMMARY}"
