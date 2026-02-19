@@ -6,6 +6,13 @@ DEBUG_LOG="/tmp/slack-times-debug.log"
 debug() { echo "[$(date '+%H:%M:%S')] [stop] $*" >> "$DEBUG_LOG"; }
 debug "=== Stop hook started ==="
 
+# ── i18n ──
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./i18n.sh
+. "${SCRIPT_DIR}/i18n.sh"
+LOCALE=$(resolve_locale "${SLACK_LOCALE:-}")
+debug "LOCALE=$LOCALE"
+
 # ── 1. stdin から JSON を読み取り ──
 INPUT=$(cat)
 debug "INPUT keys: $(echo "$INPUT" | jq -r 'keys | join(", ")' 2>/dev/null)"
@@ -94,7 +101,8 @@ post_to_slack() {
 # ── トランスクリプトが無い場合 (kill等) は中断通知のみ ──
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
   debug "No transcript — sending kill notification"
-  if ! RESPONSE=$(post_to_slack ":octagonal_sign: 作業中断 (kill)"); then
+  KILL_MESSAGE=$(i18n_text "$LOCALE" "stop_kill_message")
+  if ! RESPONSE=$(post_to_slack "$KILL_MESSAGE"); then
     debug "EXIT: failed to post kill notification"
     exit 1
   fi
@@ -271,26 +279,32 @@ debug "CHANGED_FILES=$CHANGED_FILES"
 debug "GIT_INFO=$GIT_INFO"
 
 # ── 6. メッセージ組み立て ──
+WORK_SUMMARY_LABEL=$(i18n_text "$LOCALE" "stop_work_summary_label")
+CHANGED_FILES_LABEL=$(i18n_text "$LOCALE" "stop_changed_files_label")
+ANSWER_LABEL=$(i18n_text "$LOCALE" "stop_answer_label")
+GIT_LABEL=$(i18n_text "$LOCALE" "stop_git_label")
+NO_DETAILS=$(i18n_text "$LOCALE" "stop_no_details")
+
 PARTS=""
 
 if [ -n "$CHANGED_FILES" ]; then
   if [ -n "$WORK_SUMMARY" ]; then
-    PARTS="*作業内容:*\n${WORK_SUMMARY}"
+    PARTS="*${WORK_SUMMARY_LABEL}:*\n${WORK_SUMMARY}"
   fi
   FILE_LIST=$(echo "$CHANGED_FILES" | while IFS= read -r f; do echo "• \`${f}\`"; done)
   if [ -n "$PARTS" ]; then
-    PARTS="${PARTS}\n\n*変更ファイル:*\n${FILE_LIST}"
+    PARTS="${PARTS}\n\n*${CHANGED_FILES_LABEL}:*\n${FILE_LIST}"
   else
-    PARTS="*変更ファイル:*\n${FILE_LIST}"
+    PARTS="*${CHANGED_FILES_LABEL}:*\n${FILE_LIST}"
   fi
 elif [ -n "$WORK_SUMMARY" ]; then
-  PARTS="*回答:*\n${WORK_SUMMARY}"
+  PARTS="*${ANSWER_LABEL}:*\n${WORK_SUMMARY}"
 else
-  PARTS="(詳細なし)"
+  PARTS="${NO_DETAILS}"
 fi
 
 if [ -n "$GIT_INFO" ]; then
-  PARTS="${PARTS}\n\n*Git:*\n${GIT_INFO}"
+  PARTS="${PARTS}\n\n*${GIT_LABEL}:*\n${GIT_INFO}"
 fi
 
 # 3000文字に切り詰め

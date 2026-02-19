@@ -6,6 +6,13 @@ DEBUG_LOG="/tmp/slack-times-debug.log"
 debug() { echo "[$(date '+%H:%M:%S')] [start] $*" >> "$DEBUG_LOG"; }
 debug "=== Start hook started ==="
 
+# ── i18n ──
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./i18n.sh
+. "${SCRIPT_DIR}/i18n.sh"
+LOCALE=$(resolve_locale "${SLACK_LOCALE:-}")
+debug "LOCALE=$LOCALE"
+
 # ── 共通: ファイル更新時刻取得（macOS/Linux両対応） ──
 file_mtime() {
   local file="$1"
@@ -118,12 +125,16 @@ fi
 echo -n "$CWD" > "$THREAD_CWD_FILE"
 
 # ── 7. メッセージ構築 ──
+REQUEST_LABEL=$(i18n_text "$LOCALE" "prompt_request_label")
+START_HEADER=$(i18n_text "$LOCALE" "prompt_start_header")
+REPO_DIR_LABEL=$(i18n_text "$LOCALE" "prompt_repo_dir_label")
+
 if [ -n "$THREAD_TS" ]; then
   # 2回目以降: スレッドに返信
-  TEXT=$(printf ":speech_balloon: *リクエスト:*\n%s" "$PROMPT_TRUNCATED")
+  TEXT=$(printf "*%s:*\n%s" "$REQUEST_LABEL" "$PROMPT_TRUNCATED")
 else
   # 初回: 作業開始メッセージ
-  TEXT=$(printf ":robot_face: *【Claude Code作業開始】*\n:file_folder: \`%s\`\n\n%s" "$PROJECT_INFO" "$PROMPT_TRUNCATED")
+  TEXT=$(printf "%s\n%s: \`%s\`\n\n%s" "$START_HEADER" "$REPO_DIR_LABEL" "$PROJECT_INFO" "$PROMPT_TRUNCATED")
 fi
 
 # ── 8. Slack API に直接 POST ──

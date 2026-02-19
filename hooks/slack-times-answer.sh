@@ -6,6 +6,13 @@ DEBUG_LOG="/tmp/slack-times-debug.log"
 debug() { echo "[$(date '+%H:%M:%S')] [answer] $*" >> "$DEBUG_LOG"; }
 debug "=== Answer hook started ==="
 
+# ── i18n ──
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./i18n.sh
+. "${SCRIPT_DIR}/i18n.sh"
+LOCALE=$(resolve_locale "${SLACK_LOCALE:-}")
+debug "LOCALE=$LOCALE"
+
 # ── 1. stdin から JSON を読み取り ──
 INPUT=$(cat)
 debug "INPUT keys: $(echo "$INPUT" | jq -r 'keys | join(", ")' 2>/dev/null)"
@@ -69,7 +76,8 @@ ANSWER_TRUNCATED="${ANSWER:0:500}"
 debug "ANSWER=$ANSWER_TRUNCATED"
 
 # ── 6. Slack にスレッド返信 ──
-TEXT=$(printf ":raising_hand: *回答:*\n%s" "$ANSWER_TRUNCATED")
+ANSWER_LABEL=$(i18n_text "$LOCALE" "answer_label")
+TEXT=$(printf "*%s:*\n%s" "$ANSWER_LABEL" "$ANSWER_TRUNCATED")
 
 BLOCKS=$(jq -n --arg text "$TEXT" '[{"type":"section","text":{"type":"mrkdwn","text":$text}}]')
 
