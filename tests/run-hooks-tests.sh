@@ -332,8 +332,9 @@ test_prompt_locale_en() {
   text=$(echo "$result" | jq -r '.text')
 
   assert_zero "prompt_locale_en_exit" "$status"
-  assert_contains "prompt_locale_en_header" "$text" "Prompt"
-  assert_contains "prompt_locale_en_repo_dir" "$text" "repo/dir:"
+  assert_contains "prompt_locale_en_started_label" "$text" "*Claude Code Session Started*"
+  assert_contains "prompt_locale_en_header" "$text" "*Prompt*"
+  assert_contains "prompt_locale_en_repo_dir" "$text" "*repo/dir:*"
   assert_no_emoji_shortcode "prompt_locale_en_no_emoji_shortcode" "$text"
 
   rm -rf "$tmp_dir"
@@ -353,8 +354,9 @@ test_prompt_locale_invalid_fallback() {
   text=$(echo "$result" | jq -r '.text')
 
   assert_zero "prompt_locale_invalid_exit" "$status"
-  assert_contains "prompt_locale_invalid_fallback_ja" "$text" "プロンプト"
-  assert_contains "prompt_locale_invalid_repo_dir" "$text" "repo/dir:"
+  assert_contains "prompt_locale_invalid_started_label" "$text" "*Claude Code Session Started*"
+  assert_contains "prompt_locale_invalid_fallback_prompt" "$text" "*Prompt*"
+  assert_contains "prompt_locale_invalid_repo_dir" "$text" "*repo/dir:*"
   assert_no_emoji_shortcode "prompt_locale_invalid_no_emoji_shortcode" "$text"
 
   rm -rf "$tmp_dir"
@@ -374,8 +376,9 @@ test_prompt_locale_unset_fallback() {
   text=$(echo "$result" | jq -r '.text')
 
   assert_zero "prompt_locale_unset_exit" "$status"
-  assert_contains "prompt_locale_unset_fallback_ja" "$text" "プロンプト"
-  assert_contains "prompt_locale_unset_repo_dir" "$text" "repo/dir:"
+  assert_contains "prompt_locale_unset_started_label" "$text" "*Claude Code Session Started*"
+  assert_contains "prompt_locale_unset_fallback_prompt" "$text" "*Prompt*"
+  assert_contains "prompt_locale_unset_repo_dir" "$text" "*repo/dir:*"
   assert_no_emoji_shortcode "prompt_locale_unset_no_emoji_shortcode" "$text"
 
   rm -rf "$tmp_dir"

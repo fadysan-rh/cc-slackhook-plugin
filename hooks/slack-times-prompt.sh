@@ -126,6 +126,7 @@ echo -n "$CWD" > "$THREAD_CWD_FILE"
 
 # ── 7. メッセージ構築 ──
 REQUEST_LABEL=$(i18n_text "$LOCALE" "prompt_request_label")
+SESSION_STARTED_LABEL=$(i18n_text "$LOCALE" "prompt_session_started_label")
 START_HEADER=$(i18n_text "$LOCALE" "prompt_start_header")
 REPO_DIR_LABEL=$(i18n_text "$LOCALE" "prompt_repo_dir_label")
 
@@ -134,7 +135,7 @@ if [ -n "$THREAD_TS" ]; then
   TEXT=$(printf "*%s:*\n%s" "$REQUEST_LABEL" "$PROMPT_TRUNCATED")
 else
   # 初回: 作業開始メッセージ
-  TEXT=$(printf "%s\n%s: \`%s\`\n\n%s" "$START_HEADER" "$REPO_DIR_LABEL" "$PROJECT_INFO" "$PROMPT_TRUNCATED")
+  TEXT=$(printf "*%s*\n*%s:* %s\n\n*%s*\n%s" "$SESSION_STARTED_LABEL" "$REPO_DIR_LABEL" "$PROJECT_INFO" "$START_HEADER" "$PROMPT_TRUNCATED")
 fi
 
 # ── 8. Slack API に直接 POST ──

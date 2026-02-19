@@ -27,7 +27,9 @@ i18n_text() {
     # Prompt hook
     ja:prompt_request_label) echo "リクエスト" ;;
     en:prompt_request_label) echo "Request" ;;
-    ja:prompt_start_header) echo "プロンプト" ;;
+    ja:prompt_session_started_label) echo "Claude Code Session Started" ;;
+    en:prompt_session_started_label) echo "Claude Code Session Started" ;;
+    ja:prompt_start_header) echo "Prompt" ;;
     en:prompt_start_header) echo "Prompt" ;;
     ja:prompt_repo_dir_label) echo "repo/dir" ;;
     en:prompt_repo_dir_label) echo "repo/dir" ;;

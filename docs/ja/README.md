@@ -19,8 +19,11 @@
 ```
 You: "認証機能を実装して"
   ↓
-Slack: プロンプト
-       repo/dir: org:repo/main
+Slack:
+       *Claude Code Session Started*
+       *repo/dir:* org:repo/main
+
+       *Prompt*
        認証機能を実装して
          ├── リクエスト: "JWT と Session どちらがいい？"
          ├── 回答: "JWT で"

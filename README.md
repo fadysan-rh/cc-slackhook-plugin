@@ -19,8 +19,11 @@ When teams use Claude Code, it can be hard to see what is currently in progress.
 ```
 You: "Implement authentication"
   ↓
-Slack: Prompt
-       repo/dir: org:repo/main
+Slack:
+       *Claude Code Session Started*
+       *repo/dir:* org:repo/main
+
+       *Prompt*
        Implement authentication
          ├── Request: "JWT or session?"
          ├── Answer: "JWT"
