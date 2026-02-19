@@ -5,8 +5,9 @@ A Claude Code plugin that automatically notifies a Slack channel about session a
 ## Features
 
 - **Prompt notification** (UserPromptSubmit hook): Posts to Slack each time a user sends a prompt
+- **Answer notification** (PostToolUse hook): Posts user answers to AskUserQuestion as thread replies
 - **Work summary** (Stop hook): Posts a thread reply with work summary, changed files, and Git operations when Claude finishes responding
-- **Thread management**: Messages within the same session are automatically grouped into a single Slack thread
+- **Smart threading**: Automatically starts a new thread after 30 min idle or when the working directory changes (configurable via `SLACK_THREAD_TIMEOUT`)
 - **Project info**: Displays Git repository as `org:repo/branch` or local path as `~/path`
 
 ## Install
@@ -34,6 +35,7 @@ Add the following environment variables to your `settings.json`:
 | `SLACK_USER_TOKEN` | Yes | Prompt notifications (posts as user) |
 | `SLACK_BOT_TOKEN` | Yes | Work summary notifications (posts as bot) |
 | `SLACK_CHANNEL` | Yes | Target Slack channel ID |
+| `SLACK_THREAD_TIMEOUT` | No | Seconds before starting a new thread (default: 1800 = 30 min) |
 
 ## Slack App Setup
 
@@ -51,6 +53,11 @@ User sends a prompt
   ↓ UserPromptSubmit hook
   → Slack: Session start message (org:repo/branch + prompt content)
 
+Claude asks a question (AskUserQuestion)
+  User answers
+  ↓ PostToolUse hook
+  → Slack: Thread reply (user's answer)
+
 Claude finishes responding
   ↓ Stop hook
   → Slack: Thread reply (work summary + changed files + Git operations)
@@ -58,6 +65,12 @@ Claude finishes responding
 User sends another prompt in the same session
   ↓ UserPromptSubmit hook
   → Slack: Thread reply (prompt content)
+
+--- 30 min idle or CWD changes ---
+
+User sends a prompt
+  ↓ UserPromptSubmit hook
+  → Slack: New session start message (new thread)
 ```
 
 ## License

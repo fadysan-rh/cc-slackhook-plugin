@@ -114,7 +114,7 @@ WORK_SUMMARY=$(jq -r '
 ' "$TURN_LINES_FILE" 2>/dev/null | grep -v '^$' | tail -1 | head -c 500 | slack_format || true)
 
 # ── 変更ファイル一覧 ──
-CHANGED_FILES=$(jq -r '
+TRANSCRIPT_FILES=$(jq -r '
   select(.type == "assistant") |
   .message.content[]? |
   select(.type == "tool_use") |
@@ -122,31 +122,76 @@ CHANGED_FILES=$(jq -r '
   .input.file_path // empty
 ' "$TURN_LINES_FILE" 2>/dev/null | sort -u || true)
 
-if [ -n "$CHANGED_FILES" ] && [ -n "$CWD" ]; then
-  CHANGED_FILES=$(echo "$CHANGED_FILES" | while IFS= read -r filepath; do
+REPO_ROOT=""
+if [ -n "$CWD" ] && git -C "$CWD" rev-parse --is-inside-work-tree &>/dev/null; then
+  REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)
+fi
+
+# git差分からD/Rを含む全変更を取得
+GIT_CHANGES=""
+if [ -n "$REPO_ROOT" ]; then
+  # 未ステージ + ステージ済み + 直近コミット の順で取得
+  GIT_CHANGES=$(git -C "$REPO_ROOT" diff --name-status 2>/dev/null || true)
+  if [ -z "$GIT_CHANGES" ]; then
+    GIT_CHANGES=$(git -C "$REPO_ROOT" diff --cached --name-status 2>/dev/null || true)
+  fi
+  if [ -z "$GIT_CHANGES" ]; then
+    GIT_CHANGES=$(git -C "$REPO_ROOT" diff --name-status HEAD~1 HEAD 2>/dev/null || true)
+  fi
+fi
+
+CHANGED_FILES=""
+if [ -n "$TRANSCRIPT_FILES" ] && [ -n "$CWD" ]; then
+  CHANGED_FILES=$(echo "$TRANSCRIPT_FILES" | while IFS= read -r filepath; do
+    [ -z "$filepath" ] && continue
     REL_PATH=$(echo "$filepath" | sed "s|^${CWD}/||")
-    REPO_ROOT=$(git -C "$(dirname "$filepath")" rev-parse --show-toplevel 2>/dev/null || true)
+
+    # ファイルステータス判定
+    STATUS="M"
+    if [ -n "$REPO_ROOT" ]; then
+      if ! git -C "$REPO_ROOT" ls-files --error-unmatch "$filepath" &>/dev/null; then
+        STATUS="U"
+      fi
+    fi
+
+    # diff統計の取得
     DIFF_STAT=""
     if [ -n "$REPO_ROOT" ]; then
-      # 1. 未ステージの変更
       DIFF_STAT=$(git -C "$REPO_ROOT" diff --numstat -- "$filepath" 2>/dev/null | head -1 || true)
-      # 2. ステージ済み（git add後、未コミット）
       if [ -z "$DIFF_STAT" ]; then
         DIFF_STAT=$(git -C "$REPO_ROOT" diff --cached --numstat -- "$filepath" 2>/dev/null | head -1 || true)
       fi
-      # 3. 直近のコミットに含まれる変更
       if [ -z "$DIFF_STAT" ]; then
         DIFF_STAT=$(git -C "$REPO_ROOT" diff --numstat HEAD~1 HEAD -- "$filepath" 2>/dev/null | head -1 || true)
       fi
     fi
+
     if [ -n "$DIFF_STAT" ]; then
       ADDED=$(echo "$DIFF_STAT" | awk '{print $1}')
       DELETED=$(echo "$DIFF_STAT" | awk '{print $2}')
-      echo "${REL_PATH} (+${ADDED} -${DELETED})"
+      echo "${STATUS} ${REL_PATH} (+${ADDED} -${DELETED})"
     else
-      echo "$REL_PATH"
+      echo "${STATUS} ${REL_PATH}"
     fi
   done)
+
+  # git差分からD/Rファイルを追加（トランスクリプトに現れないもの）
+  if [ -n "$GIT_CHANGES" ]; then
+    DR_FILES=$(echo "$GIT_CHANGES" | while IFS=$'\t' read -r status path extra; do
+      case "$status" in
+        D) echo "D ${path}" ;;
+        R*) echo "R ${path} → ${extra}" ;;
+      esac
+    done)
+    if [ -n "$DR_FILES" ]; then
+      if [ -n "$CHANGED_FILES" ]; then
+        CHANGED_FILES="${CHANGED_FILES}
+${DR_FILES}"
+      else
+        CHANGED_FILES="$DR_FILES"
+      fi
+    fi
+  fi
 fi
 
 # ── Git情報の抽出 ──

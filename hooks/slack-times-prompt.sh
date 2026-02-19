@@ -64,10 +64,44 @@ PROMPT_TRUNCATED="${PROMPT:0:500}"
 
 # ── 6. スレッド管理 ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
+THREAD_CWD_FILE="${THREAD_FILE}.cwd"
+THREAD_TIMEOUT=${SLACK_THREAD_TIMEOUT:-1800}  # デフォルト30分
 THREAD_TS=""
+
 if [ -f "$THREAD_FILE" ]; then
   THREAD_TS=$(cat "$THREAD_FILE")
+
+  # スレッド区切り判定: 時間経過 or CWD変更
+  NEED_NEW_THREAD=false
+
+  # 時間チェック: thread_fileの更新時刻からN秒以上経過
+  if [ -n "$THREAD_TS" ]; then
+    FILE_MOD=$(stat -f %m "$THREAD_FILE" 2>/dev/null || echo 0)
+    NOW=$(date +%s)
+    ELAPSED=$((NOW - FILE_MOD))
+    if [ "$ELAPSED" -ge "$THREAD_TIMEOUT" ]; then
+      debug "Thread timeout: ${ELAPSED}s >= ${THREAD_TIMEOUT}s"
+      NEED_NEW_THREAD=true
+    fi
+  fi
+
+  # CWDチェック: 前回と異なるディレクトリ
+  if [ "$NEED_NEW_THREAD" = "false" ] && [ -f "$THREAD_CWD_FILE" ]; then
+    PREV_CWD=$(cat "$THREAD_CWD_FILE")
+    if [ "$PREV_CWD" != "$CWD" ]; then
+      debug "CWD changed: $PREV_CWD -> $CWD"
+      NEED_NEW_THREAD=true
+    fi
+  fi
+
+  if [ "$NEED_NEW_THREAD" = "true" ]; then
+    THREAD_TS=""
+    rm -f "$THREAD_FILE" "$THREAD_CWD_FILE"
+  fi
 fi
+
+# CWDを記録
+echo -n "$CWD" > "$THREAD_CWD_FILE"
 
 # ── 7. メッセージ構築 ──
 if [ -n "$THREAD_TS" ]; then
@@ -104,13 +138,17 @@ RESPONSE=$(curl -s -X POST \
 
 debug "RESPONSE: ${RESPONSE:0:200}"
 
-# ── 9. 初回: レスポンスの ts → thread_ts ファイルに保存 ──
+# ── 9. スレッド管理の更新 ──
 if [ -z "$THREAD_TS" ]; then
+  # 初回: レスポンスの ts → thread_ts ファイルに保存
   NEW_TS=$(echo "$RESPONSE" | jq -r '.ts // ""' 2>/dev/null)
   if [ -n "$NEW_TS" ] && [ "$NEW_TS" != "null" ]; then
     echo -n "$NEW_TS" > "$THREAD_FILE"
     debug "Saved thread_ts=$NEW_TS to $THREAD_FILE"
   fi
+else
+  # 2回目以降: 最終利用時刻を更新（タイムアウト判定用）
+  touch "$THREAD_FILE"
 fi
 
 debug "=== Start hook finished ==="
