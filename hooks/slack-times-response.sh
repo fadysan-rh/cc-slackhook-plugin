@@ -64,19 +64,41 @@ post_to_slack() {
     --arg icon_url "$CLAUDE_ICON_URL" \
     '{"channel":$channel,"text":$text,"blocks":$blocks,"thread_ts":$thread_ts,"username":$username,"icon_url":$icon_url}')
 
-  curl -s -X POST \
+  local response
+  response=$(curl -sS -X POST \
     -H 'Content-Type: application/json; charset=utf-8' \
     -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
     --data "$body" \
     --connect-timeout 10 \
     --max-time 20 \
-    "https://slack.com/api/chat.postMessage" 2>/dev/null || true
+    "https://slack.com/api/chat.postMessage")
+  local curl_status=$?
+  if [ "$curl_status" -ne 0 ]; then
+    debug "ERROR: curl failed status=$curl_status"
+    return 1
+  fi
+
+  local ok
+  ok=$(echo "$response" | jq -r '.ok // false' 2>/dev/null || echo "false")
+  if [ "$ok" != "true" ]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown_error"' 2>/dev/null || echo "invalid_json_response")
+    debug "ERROR: Slack API failed error=$error response=${response:0:200}"
+    return 1
+  fi
+
+  echo "$response"
+  return 0
 }
 
 # ── トランスクリプトが無い場合 (kill等) は中断通知のみ ──
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
   debug "No transcript — sending kill notification"
-  post_to_slack ":octagonal_sign: 作業中断 (kill)"
+  if ! RESPONSE=$(post_to_slack ":octagonal_sign: 作業中断 (kill)"); then
+    debug "EXIT: failed to post kill notification"
+    exit 1
+  fi
+  debug "RESPONSE: ${RESPONSE:0:200}"
   exit 0
 fi
 
@@ -96,15 +118,23 @@ sleep 1
 TURN_LINES_FILE=$(mktemp)
 trap "rm -f '$TURN_LINES_FILE'" EXIT
 
-# 末尾200行を切り出してから最後のユーザープロンプトを探す（大規模トランスクリプト対策）
-TAIL_LINES=200
-TAIL_BUF=$(tail -n "$TAIL_LINES" "$TRANSCRIPT_PATH" 2>/dev/null || true)
-LAST_PROMPT_LINE=$(echo "$TAIL_BUF" | grep -n '"type":"user"' 2>/dev/null | grep -v 'tool_use_id' | tail -1 | cut -d: -f1 || true)
+# 末尾から可変ウィンドウで探索（200→400→800）。見つからなければ末尾200行を使用
+LAST_PROMPT_LINE=""
+TAIL_BUF=""
+for TAIL_LINES in 200 400 800; do
+  TAIL_BUF=$(tail -n "$TAIL_LINES" "$TRANSCRIPT_PATH" 2>/dev/null || true)
+  LAST_PROMPT_LINE=$(echo "$TAIL_BUF" | grep -n '"type":"user"' 2>/dev/null | grep -v 'tool_use_id' | tail -1 | cut -d: -f1 || true)
+  if [ -n "$LAST_PROMPT_LINE" ]; then
+    debug "Turn window matched within tail -${TAIL_LINES}"
+    break
+  fi
+done
 
 if [ -n "$LAST_PROMPT_LINE" ]; then
   echo "$TAIL_BUF" | tail -n +"$LAST_PROMPT_LINE" > "$TURN_LINES_FILE"
 else
-  echo "$TAIL_BUF" | tail -50 > "$TURN_LINES_FILE"
+  debug "Turn window fallback to tail -200"
+  tail -n 200 "$TRANSCRIPT_PATH" > "$TURN_LINES_FILE"
 fi
 
 # ── 作業内容: 最後のassistantテキストブロックのみ ──
@@ -176,22 +206,22 @@ if [ -n "$TRANSCRIPT_FILES" ] && [ -n "$CWD" ]; then
       echo "${STATUS} ${REL_PATH}"
     fi
   done)
+fi
 
-  # git差分からD/Rファイルを追加（トランスクリプトに現れないもの）
-  if [ -n "$GIT_CHANGES" ]; then
-    DR_FILES=$(echo "$GIT_CHANGES" | while IFS=$'\t' read -r status path extra; do
-      case "$status" in
-        D) echo "D ${path}" ;;
-        R*) echo "R ${path} → ${extra}" ;;
-      esac
-    done)
-    if [ -n "$DR_FILES" ]; then
-      if [ -n "$CHANGED_FILES" ]; then
-        CHANGED_FILES="${CHANGED_FILES}
+# git差分からD/Rファイルを追加（トランスクリプトに現れないもの）
+if [ -n "$GIT_CHANGES" ]; then
+  DR_FILES=$(echo "$GIT_CHANGES" | while IFS=$'\t' read -r status path extra; do
+    case "$status" in
+      (D) echo "D ${path}" ;;
+      (R*) echo "R ${path} → ${extra}" ;;
+    esac
+  done)
+  if [ -n "$DR_FILES" ]; then
+    if [ -n "$CHANGED_FILES" ]; then
+      CHANGED_FILES="${CHANGED_FILES}
 ${DR_FILES}"
-      else
-        CHANGED_FILES="$DR_FILES"
-      fi
+    else
+      CHANGED_FILES="$DR_FILES"
     fi
   fi
 fi
@@ -268,7 +298,10 @@ MESSAGE=$(echo -e "$PARTS" | head -c 3000)
 
 debug "Sending to Slack API (as bot)"
 
-RESPONSE=$(post_to_slack "$MESSAGE")
+if ! RESPONSE=$(post_to_slack "$MESSAGE"); then
+  debug "EXIT: failed to post stop summary"
+  exit 1
+fi
 
 debug "RESPONSE: ${RESPONSE:0:200}"
 debug "=== Stop hook finished ==="

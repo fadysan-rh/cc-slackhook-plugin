@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"start invalid auth"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"invalid auth summary"}]}}

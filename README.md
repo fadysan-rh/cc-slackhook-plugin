@@ -76,3 +76,11 @@ User sends a prompt
 ## License
 
 MIT
+
+## Development
+
+Run hook regression tests:
+
+```bash
+tests/run-hooks-tests.sh
+```

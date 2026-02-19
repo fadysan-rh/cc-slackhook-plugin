@@ -6,6 +6,20 @@ DEBUG_LOG="/tmp/slack-times-debug.log"
 debug() { echo "[$(date '+%H:%M:%S')] [start] $*" >> "$DEBUG_LOG"; }
 debug "=== Start hook started ==="
 
+# ── 共通: ファイル更新時刻取得（macOS/Linux両対応） ──
+file_mtime() {
+  local file="$1"
+  if stat -f %m "$file" >/dev/null 2>&1; then
+    stat -f %m "$file"
+    return 0
+  fi
+  if stat -c %Y "$file" >/dev/null 2>&1; then
+    stat -c %Y "$file"
+    return 0
+  fi
+  echo 0
+}
+
 # ── 1. stdin から JSON を読み取り ──
 INPUT=$(cat)
 debug "INPUT keys: $(echo "$INPUT" | jq -r 'keys | join(", ")' 2>/dev/null)"
@@ -76,7 +90,7 @@ if [ -f "$THREAD_FILE" ]; then
 
   # 時間チェック: thread_fileの更新時刻からN秒以上経過
   if [ -n "$THREAD_TS" ]; then
-    FILE_MOD=$(stat -f %m "$THREAD_FILE" 2>/dev/null || echo 0)
+    FILE_MOD=$(file_mtime "$THREAD_FILE")
     NOW=$(date +%s)
     ELAPSED=$((NOW - FILE_MOD))
     if [ "$ELAPSED" -ge "$THREAD_TIMEOUT" ]; then
