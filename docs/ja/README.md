@@ -49,7 +49,14 @@ Slack: プロンプト
 ## Install
 
 ```bash
-claude plugin add /path/to/cc-slackhook-plugin
+claude plugin marketplace add fadysan-rh/cc-slackhook-plugin
+claude plugin install cc-slackhook@cc-slackhook-marketplace --scope user
+```
+
+ローカル開発時のみ:
+
+```bash
+claude --plugin-dir /path/to/cc-slackhook-plugin
 ```
 
 ## Configuration
@@ -110,6 +117,21 @@ tests/run-hooks-tests.sh
 ```
 
 デバッグログは `/tmp/slack-times-debug.log` に出力されます。
+
+## Release
+
+```bash
+# plugin / marketplace マニフェストの検証
+claude plugin validate .claude-plugin/plugin.json
+claude plugin validate .claude-plugin/marketplace.json
+
+# テスト実行
+tests/run-hooks-tests.sh
+
+# リリースタグを公開
+git tag v1.1.0
+git push origin v1.1.0
+```
 
 ## License
 

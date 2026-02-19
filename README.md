@@ -48,8 +48,17 @@ Slack: Prompt
 
 ## Install
 
+For end users:
+
 ```bash
-claude plugin add /path/to/cc-slackhook-plugin
+claude plugin marketplace add fadysan-rh/cc-slackhook-plugin
+claude plugin install cc-slackhook@cc-slackhook-marketplace --scope user
+```
+
+For local development only:
+
+```bash
+claude --plugin-dir /path/to/cc-slackhook-plugin
 ```
 
 ## Configuration
@@ -110,6 +119,21 @@ tests/run-hooks-tests.sh
 ```
 
 Debug logs are written to `/tmp/slack-times-debug.log`.
+
+## Release
+
+```bash
+# Validate plugin and marketplace manifests
+claude plugin validate .claude-plugin/plugin.json
+claude plugin validate .claude-plugin/marketplace.json
+
+# Run tests
+tests/run-hooks-tests.sh
+
+# Publish a release tag
+git tag v1.1.0
+git push origin v1.1.0
+```
 
 ## License
 
