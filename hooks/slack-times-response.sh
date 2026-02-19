@@ -33,9 +33,42 @@ escape_mrkdwn() {
   printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+normalize_path() {
+  local path="$1"
+  local dir
+  local base
+  local dir_real
+
+  dir=$(dirname "$path")
+  base=$(basename "$path")
+
+  if ! dir_real=$(cd -P "$dir" 2>/dev/null && pwd -P); then
+    return 1
+  fi
+  printf "%s/%s" "$dir_real" "$base"
+}
+
+sanitize_state_file_path() {
+  local path="$1"
+  local label="$2"
+
+  if [ -L "$path" ]; then
+    debug "Reset unsafe symlink state file (${label})"
+    rm -f "$path" 2>/dev/null || return 1
+  fi
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    debug "EXIT: unsafe state file type (${label})"
+    return 1
+  fi
+  return 0
+}
+
 is_safe_transcript_path() {
   local path="$1"
   local cwd="$2"
+  local normalized_path
+  local normalized_cwd
+  local normalized_home_claude
 
   [ -n "$path" ] || return 1
   case "$path" in
@@ -49,12 +82,33 @@ is_safe_transcript_path() {
     *.jsonl) ;;
     *) return 1 ;;
   esac
-  if [[ "$path" == "$HOME/.claude/"* ]]; then
+
+  # Existing symlink files can redirect outside allowed roots.
+  if [ -L "$path" ]; then
+    return 1
+  fi
+
+  # Only regular files (or non-existing future files) are accepted.
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    return 1
+  fi
+
+  normalized_path=$(normalize_path "$path") || return 1
+  normalized_home_claude=$(normalize_path "$HOME/.claude/placeholder") || return 1
+  normalized_home_claude=$(dirname "$normalized_home_claude")
+
+  if [[ "$normalized_path" == "$normalized_home_claude/"* ]]; then
     return 0
   fi
-  if [ -n "$cwd" ] && [[ "$path" == "$cwd/"* ]]; then
-    return 0
+
+  if [ -n "$cwd" ]; then
+    normalized_cwd=$(normalize_path "$cwd/placeholder") || return 1
+    normalized_cwd=$(dirname "$normalized_cwd")
+    if [[ "$normalized_path" == "$normalized_cwd/"* ]]; then
+      return 0
+    fi
   fi
+
   return 1
 }
 
@@ -109,8 +163,13 @@ debug "CWD=$CWD"
 # ── スレッド ts の読み取り ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
 THREAD_TS=""
+
+if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
+  exit 0
+fi
+
 if [ -f "$THREAD_FILE" ]; then
-  THREAD_TS=$(cat "$THREAD_FILE")
+  THREAD_TS=$(cat "$THREAD_FILE" 2>/dev/null || true)
 fi
 
 if [ -z "$THREAD_TS" ]; then

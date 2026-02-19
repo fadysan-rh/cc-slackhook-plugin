@@ -33,6 +33,47 @@ escape_mrkdwn() {
   printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+sanitize_state_file_path() {
+  local path="$1"
+  local label="$2"
+
+  if [ -L "$path" ]; then
+    debug "Reset unsafe symlink state file (${label})"
+    rm -f "$path" 2>/dev/null || return 1
+  fi
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    debug "EXIT: unsafe state file type (${label})"
+    return 1
+  fi
+  return 0
+}
+
+write_state_file_atomic() {
+  local path="$1"
+  local value="$2"
+  local dir
+  local tmp_file
+
+  dir=$(dirname "$path")
+  (umask 077 && mkdir -p "$dir") 2>/dev/null || return 1
+  if [ -e "$path" ] && [ ! -f "$path" ] && [ ! -L "$path" ]; then
+    return 1
+  fi
+
+  tmp_file=$(mktemp "$dir/.slack-state.XXXXXX") || return 1
+  if ! printf "%s" "$value" > "$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  chmod 600 "$tmp_file" 2>/dev/null || true
+  if ! mv -f "$tmp_file" "$path"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  chmod 600 "$path" 2>/dev/null || true
+  return 0
+}
+
 init_debug_log
 debug "=== Answer hook started ==="
 
@@ -72,8 +113,13 @@ debug "TOOL_RESPONSE_LEN=${#TOOL_RESPONSE}"
 # ── 4. スレッド ts の読み取り ──
 THREAD_FILE="$HOME/.claude/.slack-thread-${SESSION_ID}"
 THREAD_TS=""
+
+if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
+  exit 0
+fi
+
 if [ -f "$THREAD_FILE" ]; then
-  THREAD_TS=$(cat "$THREAD_FILE")
+  THREAD_TS=$(cat "$THREAD_FILE" 2>/dev/null || true)
 fi
 
 if [ -z "$THREAD_TS" ]; then
@@ -135,8 +181,9 @@ RESPONSE=$(curl -s -X POST \
 debug "RESPONSE: ${RESPONSE:0:200}"
 
 # スレッドの最終利用時刻を更新
-touch "$THREAD_FILE"
-chmod 600 "$THREAD_FILE" 2>/dev/null || true
+if ! write_state_file_atomic "$THREAD_FILE" "$THREAD_TS"; then
+  debug "WARN: failed to refresh thread_ts file"
+fi
 
 debug "=== Answer hook finished ==="
 

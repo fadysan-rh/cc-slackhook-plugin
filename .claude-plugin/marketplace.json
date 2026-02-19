@@ -1,11 +1,11 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "cc-slackhook-marketplace",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Marketplace for the cc-slackhook Claude Code plugin",
   "metadata": {
     "description": "Marketplace for the cc-slackhook Claude Code plugin",
-    "version": "1.1.0"
+    "version": "1.1.2"
   },
   "owner": {
     "name": "fadysan-rh"
@@ -14,7 +14,7 @@
     {
       "name": "cc-slackhook",
       "description": "Real-time Slack notifications for Claude Code sessions",
-      "version": "1.1.0",
+      "version": "1.1.2",
       "author": {
         "name": "fadysan-rh"
       },

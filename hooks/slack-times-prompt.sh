@@ -33,6 +33,47 @@ escape_mrkdwn() {
   printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+sanitize_state_file_path() {
+  local path="$1"
+  local label="$2"
+
+  if [ -L "$path" ]; then
+    debug "Reset unsafe symlink state file (${label})"
+    rm -f "$path" 2>/dev/null || return 1
+  fi
+  if [ -e "$path" ] && [ ! -f "$path" ]; then
+    debug "EXIT: unsafe state file type (${label})"
+    return 1
+  fi
+  return 0
+}
+
+write_state_file_atomic() {
+  local path="$1"
+  local value="$2"
+  local dir
+  local tmp_file
+
+  dir=$(dirname "$path")
+  (umask 077 && mkdir -p "$dir") 2>/dev/null || return 1
+  if [ -e "$path" ] && [ ! -f "$path" ] && [ ! -L "$path" ]; then
+    return 1
+  fi
+
+  tmp_file=$(mktemp "$dir/.slack-state.XXXXXX") || return 1
+  if ! printf "%s" "$value" > "$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  chmod 600 "$tmp_file" 2>/dev/null || true
+  if ! mv -f "$tmp_file" "$path"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  chmod 600 "$path" 2>/dev/null || true
+  return 0
+}
+
 init_debug_log
 debug "=== Start hook started ==="
 
@@ -126,8 +167,15 @@ THREAD_CWD_FILE="${THREAD_FILE}.cwd"
 THREAD_TIMEOUT=${SLACK_THREAD_TIMEOUT:-1800}  # デフォルト30分
 THREAD_TS=""
 
+if ! sanitize_state_file_path "$THREAD_FILE" "thread_ts"; then
+  exit 0
+fi
+if ! sanitize_state_file_path "$THREAD_CWD_FILE" "thread_cwd"; then
+  exit 0
+fi
+
 if [ -f "$THREAD_FILE" ]; then
-  THREAD_TS=$(cat "$THREAD_FILE")
+  THREAD_TS=$(cat "$THREAD_FILE" 2>/dev/null || true)
 
   # スレッド区切り判定: 時間経過 or CWD変更
   NEED_NEW_THREAD=false
@@ -159,8 +207,10 @@ if [ -f "$THREAD_FILE" ]; then
 fi
 
 # CWDを記録
-echo -n "$CWD" > "$THREAD_CWD_FILE"
-chmod 600 "$THREAD_CWD_FILE" 2>/dev/null || true
+if ! write_state_file_atomic "$THREAD_CWD_FILE" "$CWD"; then
+  debug "EXIT: failed to write thread cwd file"
+  exit 0
+fi
 
 # ── 7. メッセージ構築 ──
 REQUEST_LABEL=$(i18n_text "$LOCALE" "prompt_request_label")
@@ -207,13 +257,17 @@ if [ -z "$THREAD_TS" ]; then
   # 初回: レスポンスの ts → thread_ts ファイルに保存
   NEW_TS=$(echo "$RESPONSE" | jq -r '.ts // ""' 2>/dev/null)
   if [ -n "$NEW_TS" ] && [ "$NEW_TS" != "null" ]; then
-    echo -n "$NEW_TS" > "$THREAD_FILE"
-    chmod 600 "$THREAD_FILE" 2>/dev/null || true
-    debug "Saved thread_ts=$NEW_TS to $THREAD_FILE"
+    if write_state_file_atomic "$THREAD_FILE" "$NEW_TS"; then
+      debug "Saved thread_ts=$NEW_TS to $THREAD_FILE"
+    else
+      debug "WARN: failed to save thread_ts"
+    fi
   fi
 else
   # 2回目以降: 最終利用時刻を更新（タイムアウト判定用）
-  touch "$THREAD_FILE"
+  if ! write_state_file_atomic "$THREAD_FILE" "$THREAD_TS"; then
+    debug "WARN: failed to refresh thread_ts file"
+  fi
 fi
 
 debug "=== Start hook finished ==="

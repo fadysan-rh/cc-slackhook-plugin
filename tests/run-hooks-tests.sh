@@ -560,6 +560,54 @@ test_prompt_debug_log_permission_when_enabled() {
   rm -rf "$tmp_dir"
 }
 
+test_prompt_symlink_thread_cwd_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/prompt-body.json"
+  local session_id="test-prompt-symlink-cwd"
+  local victim_file="${repo_dir}/victim.txt"
+  local thread_cwd_file="${test_home}/.claude/.slack-thread-${session_id}.cwd"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  printf "ORIGINAL" > "$victim_file"
+  ln -s "$victim_file" "$thread_cwd_file"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg prompt "symlink safety" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, prompt:$prompt, cwd:$cwd}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  SLACK_USER_TOKEN="xoxp-test" \
+  SLACK_CHANNEL="C_TEST" \
+    bash "$HOOK_PROMPT" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+
+  assert_zero "prompt_symlink_thread_cwd_exit" "$status"
+  assert_contains "prompt_symlink_thread_cwd_victim_unchanged" "$victim_after" "ORIGINAL"
+  if [ -L "$thread_cwd_file" ]; then
+    fail "prompt_symlink_thread_cwd_symlink_replaced" "thread cwd file remained symlink"
+  else
+    pass "prompt_symlink_thread_cwd_symlink_replaced"
+  fi
+
+  rm -rf "$tmp_dir"
+}
+
 test_answer_locale_en() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -660,6 +708,50 @@ test_answer_escape_mrkdwn_mentions() {
   rm -rf "$tmp_dir"
 }
 
+test_answer_symlink_thread_file_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/answer-body.json"
+  local session_id="test-answer-symlink-thread"
+  local victim_file="${repo_dir}/victim.txt"
+  local thread_file="${test_home}/.claude/.slack-thread-${session_id}"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  printf "ORIGINAL" > "$victim_file"
+  ln -s "$victim_file" "$thread_file"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg tr "yes" \
+    '{session_id:$sid, tool_response:$tr}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  SLACK_USER_TOKEN="xoxp-test" \
+  SLACK_CHANNEL="C_TEST" \
+    bash "$HOOK_ANSWER" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+
+  assert_zero "answer_symlink_thread_exit" "$status"
+  assert_contains "answer_symlink_thread_victim_unchanged" "$victim_after" "ORIGINAL"
+  assert_file_absent "answer_symlink_thread_no_post" "$capture_file"
+  assert_file_absent "answer_symlink_thread_removed" "$thread_file"
+
+  rm -rf "$tmp_dir"
+}
+
 test_stop_normal() {
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -685,6 +777,56 @@ test_stop_normal() {
   assert_contains "stop_normal_summary" "$logs" "WORK_SUMMARY_LEN=14"
   assert_contains "stop_normal_changed_file" "$logs" "CHANGED_FILE_COUNT=1"
   assert_contains "stop_normal_posted" "$logs" "RESPONSE: {\"ok\":true"
+
+  rm -rf "$tmp_dir"
+}
+
+test_stop_symlink_thread_file_not_followed() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local transcript="${repo_dir}/transcript-stop-symlink.jsonl"
+  cp "${FIXTURES_DIR}/stop-invalid-auth.jsonl" "$transcript"
+
+  local test_home="${repo_dir}/.home"
+  local mock_bin="${repo_dir}/.mock-bin"
+  local capture_file="${repo_dir}/stop-body.json"
+  local session_id="test-stop-symlink-thread"
+  local victim_file="${repo_dir}/victim.txt"
+  local thread_file="${test_home}/.claude/.slack-thread-${session_id}"
+  mkdir -p "${test_home}/.claude"
+  write_mock_curl "$mock_bin"
+
+  printf "ORIGINAL" > "$victim_file"
+  ln -s "$victim_file" "$thread_file"
+
+  local input
+  input=$(jq -nc \
+    --arg sid "$session_id" \
+    --arg path "$transcript" \
+    --arg cwd "$repo_dir" \
+    '{session_id:$sid, transcript_path:$path, cwd:$cwd, stop_hook_active:false}')
+
+  local status=0
+  HOME="$test_home" \
+  PATH="${mock_bin}:${PATH}" \
+  MOCK_CURL_MODE="ok" \
+  MOCK_CURL_CAPTURE="$capture_file" \
+  SLACK_BOT_TOKEN="xoxb-test" \
+  SLACK_CHANNEL="C_TEST" \
+  SLACK_HOOK_DEBUG="1" \
+  SLACK_HOOK_DEBUG_LOG="$DEBUG_LOG" \
+    bash "$HOOK_STOP" <<< "$input" >/dev/null 2>&1 || status=$?
+
+  local victim_after
+  victim_after=$(cat "$victim_file")
+
+  assert_zero "stop_symlink_thread_exit" "$status"
+  assert_contains "stop_symlink_thread_victim_unchanged" "$victim_after" "ORIGINAL"
+  assert_file_absent "stop_symlink_thread_no_post" "$capture_file"
+  assert_file_absent "stop_symlink_thread_removed" "$thread_file"
 
   rm -rf "$tmp_dir"
 }
@@ -784,6 +926,35 @@ test_stop_reject_unsafe_transcript_path() {
 
   assert_zero "stop_unsafe_transcript_exit" "$status"
   assert_contains "stop_unsafe_transcript_rejected" "$logs" "EXIT: unsafe transcript_path"
+
+  rm -rf "$tmp_dir"
+}
+
+test_stop_reject_transcript_path_with_dotdot() {
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local repo_dir="${tmp_dir}/repo"
+  prepare_git_repo "$repo_dir"
+
+  local secret_dir="${tmp_dir}/secret"
+  mkdir -p "$secret_dir"
+  local outside="${secret_dir}/outside.jsonl"
+  cat > "$outside" <<'EOF'
+{"type":"user","message":{"content":"outside"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"outside summary"}]}}
+EOF
+
+  local bypass_path="${repo_dir}/../secret/outside.jsonl"
+
+  local log_start
+  log_start=$(debug_line_count)
+  local status
+  status=$(run_stop_hook "$repo_dir" "$bypass_path" "test-transcript-dotdot" "ok")
+  local logs
+  logs=$(debug_slice "$log_start")
+
+  assert_zero "stop_dotdot_path_exit" "$status"
+  assert_contains "stop_dotdot_path_rejected" "$logs" "EXIT: unsafe transcript_path"
 
   rm -rf "$tmp_dir"
 }
@@ -915,21 +1086,25 @@ main() {
   test_prompt_escape_mrkdwn_mentions
   test_prompt_debug_disabled_by_default
   test_prompt_debug_log_permission_when_enabled
+  test_prompt_symlink_thread_cwd_not_followed
   test_answer_locale_en
   test_answer_locale_ja
   test_answer_locale_invalid_fallback
   test_answer_locale_unset_fallback
   test_answer_escape_mrkdwn_mentions
+  test_answer_symlink_thread_file_not_followed
   test_stop_locale_en
   test_stop_locale_ja
   test_stop_locale_invalid_fallback
   test_stop_locale_unset_fallback
   test_stop_kill_message_en
+  test_stop_symlink_thread_file_not_followed
   test_stop_normal
   test_stop_dr_only
   test_stop_long_turn_window
   test_stop_invalid_auth
   test_stop_reject_unsafe_transcript_path
+  test_stop_reject_transcript_path_with_dotdot
 
   echo "----"
   echo "Passed: ${PASS_COUNT}"
